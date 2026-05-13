@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+venv/
+.venv/
+env/
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Local DB / secrets
+*.db
+.env
+.env.*
+credentials.txt
+
+# Node (frontend)
+frontend/performance-compass/node_modules/
+frontend/performance-compass/dist/
+frontend/performance-compass/.tanstack/
+
+# IDE
+.idea/
+*.swp
+.DS_Store
+
+# Static build output from backend
+static/
