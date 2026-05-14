@@ -6,6 +6,10 @@ export type CanonicalRole =
   | "SUPER_ADMIN"
   | "CEO"
   | "VP_OPERATIONS"
+  | "REGIONAL_HEAD"
+  | "CFO"
+  | "CMO"
+  | "CTO"
   | "PLANT_HEAD"
   | "DEPT_HEAD"
   | "MANAGER"
@@ -23,6 +27,14 @@ export function normalizeCanonicalRole(systemRole: string): CanonicalRole {
       return "CEO";
     case "VP_OPERATIONS":
       return "VP_OPERATIONS";
+    case "REGIONAL_HEAD":
+      return "REGIONAL_HEAD";
+    case "CFO":
+      return "CFO";
+    case "CMO":
+      return "CMO";
+    case "CTO":
+      return "CTO";
     case "PLANT_HEAD":
     case "PLANT_MANAGER":
       return "PLANT_HEAD";

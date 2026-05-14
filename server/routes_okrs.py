@@ -18,6 +18,7 @@ from server.okr_cascade_service import (
     calculate_kr_progress,
     score_to_rating,
 )
+from server.roles import allowed_objective_levels_for, normalize_role
 
 router = APIRouter(prefix="/api/okrs", tags=["okrs"])
 
@@ -215,7 +216,7 @@ def create_objective(
         raise HTTPException(
             403,
             f"Role {role} cannot create {req.level} OKRs. "
-            f"Allowed levels: {cascade.ROLE_CREATE_LEVELS.get(role, [])}"
+            f"Allowed levels: {allowed_objective_levels_for(normalize_role(role))}"
         )
 
     # Validate parent exists if specified
@@ -429,7 +430,7 @@ def get_progress_summary(
 @router.get("/allowed-levels")
 def get_allowed_levels(role: str = ""):
     """Return which OKR levels the given role can create."""
-    levels = OKRCascadeService.ROLE_CREATE_LEVELS.get(role, [])
+    levels = allowed_objective_levels_for(normalize_role(role))
     return {"role": role, "allowed_levels": levels}
 
 

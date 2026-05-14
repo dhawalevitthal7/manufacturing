@@ -12,10 +12,18 @@ from typing import List, Optional
 from server.database import get_db
 from server.models import (
     Team, TeamMember, User, Department, Plant, Objective, KeyResult,
-    Organization
+    OrgNode,
 )
-from server.schemas import TeamCreate
+from server.schemas import TeamCreate, TeamUpdate
 from server.team_membership_service import enroll_team_member
+from server.auth import require_super_admin, require_super_admin_or_hr_head
+from server.services.org_tree_service import sync_org_node_for
+from server.services.audit_service import (
+    audit_super_admin_action,
+    STRUCTURE_CREATE,
+    STRUCTURE_UPDATE,
+    STRUCTURE_DELETE,
+)
 
 router = APIRouter(prefix="/api/teams", tags=["teams"])
 
@@ -248,6 +256,123 @@ def get_team(
     }
 
 
+@router.put("/{team_id}")
+def update_team(
+    team_id: str,
+    req: TeamUpdate,
+    db: Session = Depends(get_db),
+    org_id: str = "",
+    _auth: dict = Depends(require_super_admin),
+):
+    """Update team name, department, or lead (SUPER_ADMIN). Syncs OrgNode when possible."""
+    team = db.query(Team).filter(Team.id == team_id).first()
+    if not team:
+        raise HTTPException(status_code=404, detail="Team not found")
+    if team.org_id != org_id:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    body = req.model_dump(exclude_unset=True)
+
+    if "name" in body and body["name"] is not None:
+        team.name = body["name"]
+    if "lead_id" in body:
+        team.lead_id = body["lead_id"]
+    if "department_id" in body and body["department_id"] is not None:
+        new_dept_id = body["department_id"]
+        dept = db.query(Department).filter(
+            Department.id == new_dept_id,
+            Department.org_id == org_id,
+        ).first()
+        if not dept:
+            raise HTTPException(status_code=404, detail="Department not found")
+        team.department_id = new_dept_id
+
+    dept_node = (
+        db.query(OrgNode).filter(
+            OrgNode.node_type == "DEPARTMENT",
+            OrgNode.org_id == org_id,
+            OrgNode.id == team.department_id,
+        ).first()
+    )
+    if dept_node:
+        try:
+            sync_org_node_for(
+                entity_type="TEAM",
+                entity_id=team.id,
+                org_id=org_id,
+                name=team.name,
+                parent_id=dept_node.id,
+                code=None,
+                head_user_id=team.lead_id,
+                db=db,
+            )
+        except HTTPException:
+            db.rollback()
+            raise
+        except Exception as exc:
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to sync org node: {exc}") from exc
+
+    db.commit()
+    db.refresh(team)
+    audit_super_admin_action(
+        org_id=org_id,
+        actor_user_id=str(_auth.get("sub") or ""),
+        action=STRUCTURE_UPDATE,
+        entity_type="TEAM",
+        entity_id=team_id,
+        details=body,
+    )
+    return {
+        "id": team.id,
+        "name": team.name,
+        "department_id": team.department_id,
+        "lead_id": team.lead_id,
+    }
+
+
+@router.delete("/{team_id}")
+def delete_team(
+    team_id: str,
+    db: Session = Depends(get_db),
+    org_id: str = "",
+    _auth: dict = Depends(require_super_admin),
+):
+    """Soft-delete a team and its roster rows (SUPER_ADMIN)."""
+    team = db.query(Team).filter(Team.id == team_id).first()
+    if not team:
+        raise HTTPException(status_code=404, detail="Team not found")
+    if team.org_id != org_id:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    team.is_active = False
+    for tm in (
+        db.query(TeamMember)
+        .filter(TeamMember.team_id == team_id, TeamMember.org_id == org_id)
+        .all()
+    ):
+        tm.is_active = False
+
+    node = (
+        db.query(OrgNode)
+        .filter(OrgNode.id == team_id, OrgNode.org_id == org_id, OrgNode.node_type == "TEAM")
+        .first()
+    )
+    if node:
+        node.is_active = False
+
+    db.commit()
+    audit_super_admin_action(
+        org_id=org_id,
+        actor_user_id=str(_auth.get("sub") or ""),
+        action=STRUCTURE_DELETE,
+        entity_type="TEAM",
+        entity_id=team_id,
+        details={"name": team.name},
+    )
+    return {"status": "deleted", "id": team_id}
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # CREATE TEAM
 # ──────────────────────────────────────────────────────────────────────────────
@@ -257,7 +382,7 @@ def create_team(
     req: TeamCreate,
     db: Session = Depends(get_db),
     org_id: str = "",
-    user_id: str = "",
+    _auth: dict = Depends(require_super_admin),
 ):
     """Create a new team in a department, optionally with roster and lead."""
     dept = db.query(Department).filter(
@@ -310,6 +435,20 @@ def create_team(
     db.commit()
     db.refresh(team)
 
+    audit_super_admin_action(
+        org_id=org_id,
+        actor_user_id=str(_auth.get("sub") or ""),
+        action=STRUCTURE_CREATE,
+        entity_type="TEAM",
+        entity_id=team.id,
+        details={
+            "name": team.name,
+            "department_id": team.department_id,
+            "lead_id": team.lead_id,
+            "member_count": len(ordered),
+        },
+    )
+
     return {
         "id": team.id,
         "name": team.name,
@@ -326,11 +465,11 @@ def create_team(
 @router.post("/{team_id}/members")
 def add_team_member(
     team_id: str,
-    user_id: str = Query(...),
+    member_user_id: str = Query(..., description="User id to add to the team"),
     is_team_lead: bool = Query(False),
     db: Session = Depends(get_db),
     org_id: str = "",
-    requesting_user_id: str = "",
+    _auth: dict = Depends(require_super_admin_or_hr_head),
 ):
     """
     Add a member to a team with automatic OKR hierarchy connection.
@@ -351,7 +490,7 @@ def add_team_member(
     
     # Verify user exists
     user = db.query(User).filter(
-        User.id == user_id,
+        User.id == member_user_id,
         User.org_id == org_id
     ).first()
     
@@ -361,13 +500,13 @@ def add_team_member(
     # Check if already a member
     existing = db.query(TeamMember).filter(
         TeamMember.team_id == team_id,
-        TeamMember.user_id == user_id
+        TeamMember.user_id == member_user_id
     ).first()
     
     if existing:
         if not existing.is_active:
             try:
-                team_member = enroll_team_member(db, org_id, team, user_id, is_team_lead)
+                team_member = enroll_team_member(db, org_id, team, member_user_id, is_team_lead)
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
             db.commit()
@@ -375,14 +514,14 @@ def add_team_member(
             return {
                 "status": "reactivated",
                 "team_member_id": team_member.id,
-                "user_id": user_id,
+                "user_id": member_user_id,
                 "is_team_lead": team_member.is_team_lead,
                 "okr_connections": "existing connections retained"
             }
         raise HTTPException(status_code=409, detail="User is already a member of this team")
     
     try:
-        team_member = enroll_team_member(db, org_id, team, user_id, is_team_lead)
+        team_member = enroll_team_member(db, org_id, team, member_user_id, is_team_lead)
     except ValueError as e:
         if str(e) == "already_active_member":
             raise HTTPException(status_code=409, detail="User is already a member of this team")
@@ -394,7 +533,7 @@ def add_team_member(
     return {
         "status": "added",
         "team_member_id": team_member.id,
-        "user_id": user_id,
+        "user_id": member_user_id,
         "is_team_lead": team_member.is_team_lead,
         "joined_at": team_member.joined_at.isoformat() if team_member.joined_at else None,
         "okr_connections": "Member enrolled and individual OKRs linked where applicable",
@@ -411,6 +550,7 @@ def remove_team_member(
     user_id: str,
     db: Session = Depends(get_db),
     org_id: str = "",
+    _auth: dict = Depends(require_super_admin_or_hr_head),
 ):
     """Remove a member from a team."""
     team_member = db.query(TeamMember).filter(
@@ -440,6 +580,7 @@ def update_team_lead_status(
     is_team_lead: bool = Query(...),
     db: Session = Depends(get_db),
     org_id: str = "",
+    _auth: dict = Depends(require_super_admin),
 ):
     """Update team lead designation for a team member."""
     team_member = db.query(TeamMember).filter(
@@ -458,11 +599,20 @@ def update_team_lead_status(
     
     # If making someone a lead, update team's lead_id
     if is_team_lead:
-        team = db.query(Team).filter(Team.id == team_id).first()
+        team = db.query(Team).filter(Team.id == team_id, Team.org_id == org_id).first()
         if team:
             team.lead_id = user_id
             db.commit()
-    
+
+    audit_super_admin_action(
+        org_id=org_id,
+        actor_user_id=str(_auth.get("sub") or ""),
+        action=STRUCTURE_UPDATE,
+        entity_type="TEAM",
+        entity_id=team_id,
+        details={"member_user_id": user_id, "is_team_lead": is_team_lead},
+    )
+
     return {
         "status": "updated",
         "user_id": user_id,

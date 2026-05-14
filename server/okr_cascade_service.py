@@ -25,6 +25,7 @@ from server.models import (
     Department,
     Plant,
 )
+from server.roles import can_create_objective_at_level, normalize_role
 
 
 # ── Scoring Helpers ──────────────────────────────────────────────────────────
@@ -121,27 +122,13 @@ class OKRCascadeService:
     def __init__(self, db: Session):
         self.db = db
 
-    # ── Role-based creation rules ────────────────────────────────────────
-
-    # Maps system_role → allowed OKR levels that role can CREATE
-    ROLE_CREATE_LEVELS = {
-        "SUPER_ADMIN": ["ORGANIZATION", "PLANT", "DEPARTMENT", "TEAM", "INDIVIDUAL"],
-        "CEO": ["ORGANIZATION", "PLANT"],
-        "VP_OPERATIONS": ["PLANT", "DEPARTMENT"],
-        "PLANT_HEAD": ["PLANT", "DEPARTMENT"],
-        "PLANT_MANAGER": ["DEPARTMENT", "TEAM"],
-        "DEPT_HEAD": ["DEPARTMENT", "TEAM"],
-        "MANAGER": ["TEAM", "INDIVIDUAL"],
-        "TEAM_LEAD": ["TEAM", "INDIVIDUAL"],
-        "SUPERVISOR": [],
-        "EMPLOYEE": [],  # Employees cannot directly create OKRs - they use AI assistant for suggestions
-        "HR_HEAD": ["ORGANIZATION", "DEPARTMENT"],
-        "HR_ADMIN": ["DEPARTMENT"],
-    }
+    # ── Role-based creation rules (delegate to server.roles) ─────────────────
 
     def can_create_at_level(self, role: str, level: str) -> bool:
-        allowed = self.ROLE_CREATE_LEVELS.get(role, [])
-        return level in allowed
+        """Whether ``role`` may create an OKR at ``level`` (canonical policy)."""
+        return can_create_objective_at_level(
+            normalize_role(role), (level or "").strip().upper()
+        )
 
     # ── Cascade Progress Calculation ─────────────────────────────────────
 

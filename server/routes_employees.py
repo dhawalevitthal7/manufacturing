@@ -1,11 +1,19 @@
-import random, json
+import random
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from server.database import get_db
 from sqlalchemy import or_
-from server.models import User, Plant, Department, Team, Designation, Shift, ReportingRelationship, AuditLog, TeamMember
+from server.models import User, Plant, Department, Team, Designation, Shift, ReportingRelationship, TeamMember
 from server.schemas import EmployeeCreate, EmployeeUpdate, EmployeeBulkCreate
-from server.auth import get_password_hash
+from server.auth import get_password_hash, require_super_admin_or_hr_head
+from server.roles import SystemRole, normalize_role
+from server.services.audit_service import (
+    audit_super_admin_action,
+    record_audit_event,
+    STRUCTURE_CREATE,
+    STRUCTURE_UPDATE,
+    ROLE_ASSIGN,
+)
 
 router = APIRouter(prefix="/api/employees", tags=["employees"])
 AVATAR_COLORS = ["#6366f1","#8b5cf6","#ec4899","#f43f5e","#f97316","#eab308","#22c55e","#14b8a6","#0ea5e9","#3b82f6"]
@@ -46,9 +54,15 @@ def list_employees(db: Session = Depends(get_db), org_id: str = "", search: str 
 
 
 @router.post("")
-def create_employee(req: EmployeeCreate, db: Session = Depends(get_db), org_id: str = "", user_id: str = ""):
+def create_employee(
+    req: EmployeeCreate,
+    db: Session = Depends(get_db),
+    org_id: str = "",
+    _auth: dict = Depends(require_super_admin_or_hr_head),
+):
     """Directly create an employee in DB. No invitation flow.
     Employee can immediately login with the provided email/password."""
+    actor_sub = str(_auth.get("sub") or "")
     existing = db.query(User).filter(User.email == req.email).first()
     if existing:
         raise HTTPException(400, "Email already exists")
@@ -64,20 +78,28 @@ def create_employee(req: EmployeeCreate, db: Session = Depends(get_db), org_id: 
         avatar_color=random.choice(AVATAR_COLORS),
     )
     db.add(user)
-    db.flush()
-
-    # Auto-audit
-    db.add(AuditLog(org_id=org_id, user_id=user_id, action="CREATE",
-                    entity_type="USER", entity_id=user.id,
-                    details=json.dumps({"name": req.name, "email": req.email, "role": req.system_role})))
     db.commit()
     db.refresh(user)
+    audit_super_admin_action(
+        org_id=org_id,
+        actor_user_id=actor_sub,
+        action=STRUCTURE_CREATE,
+        entity_type="USER",
+        entity_id=user.id,
+        details={"name": req.name, "email": req.email, "system_role": req.system_role},
+    )
     return _emp_dict(user, db)
 
 
 @router.post("/bulk")
-def bulk_create_employees(req: EmployeeBulkCreate, db: Session = Depends(get_db), org_id: str = "", user_id: str = ""):
+def bulk_create_employees(
+    req: EmployeeBulkCreate,
+    db: Session = Depends(get_db),
+    org_id: str = "",
+    _auth: dict = Depends(require_super_admin_or_hr_head),
+):
     """Bulk create employees. Skips duplicates."""
+    actor_sub = str(_auth.get("sub") or "")
     created, skipped = [], []
     for emp in req.employees:
         existing = db.query(User).filter(User.email == emp.email).first()
@@ -97,6 +119,14 @@ def bulk_create_employees(req: EmployeeBulkCreate, db: Session = Depends(get_db)
         db.add(u)
         created.append(emp.email)
     db.commit()
+    audit_super_admin_action(
+        org_id=org_id,
+        actor_user_id=actor_sub,
+        action=STRUCTURE_CREATE,
+        entity_type="USER",
+        entity_id=None,
+        details={"bulk_count": len(created), "skipped": len(skipped)},
+    )
     return {"created": len(created), "skipped": len(skipped), "skipped_emails": skipped}
 
 
@@ -126,33 +156,90 @@ def get_employee(uid: str, db: Session = Depends(get_db)):
 
 
 @router.put("/{uid}")
-def update_employee(uid: str, req: EmployeeUpdate, db: Session = Depends(get_db), user_id: str = "", org_id: str = ""):
+def update_employee(
+    uid: str,
+    req: EmployeeUpdate,
+    db: Session = Depends(get_db),
+    org_id: str = "",
+    _auth: dict = Depends(require_super_admin_or_hr_head),
+):
+    actor_sub = str(_auth.get("sub") or "")
+    actor_role = normalize_role(str(_auth.get("system_role") or _auth.get("role") or ""))
+
     user = db.query(User).filter(User.id == uid).first()
     if not user:
         raise HTTPException(404, "Employee not found")
+    if user.org_id != org_id:
+        raise HTTPException(404, "Employee not found")
+
+    updates = req.model_dump(exclude_unset=True)
+    if "system_role" in updates:
+        new_norm = normalize_role(str(updates["system_role"])).value
+        old_norm = normalize_role(str(user.system_role)).value
+        if new_norm != old_norm and actor_role != SystemRole.SUPER_ADMIN:
+            raise HTTPException(
+                403,
+                "Only SUPER_ADMIN may change a user's system_role; HR_HEAD may update other profile fields.",
+            )
+
+    original_role_norm = normalize_role(str(user.system_role)).value
+
     changes = {}
-    for field, value in req.model_dump(exclude_unset=True).items():
+    for field, value in updates.items():
         old = getattr(user, field)
         setattr(user, field, value)
         changes[field] = {"old": old, "new": value}
 
-    db.add(AuditLog(org_id=org_id, user_id=user_id, action="UPDATE",
-                    entity_type="USER", entity_id=uid, details=json.dumps(changes)))
     db.commit()
     db.refresh(user)
+
+    new_role_norm = normalize_role(str(user.system_role)).value
+    if new_role_norm != original_role_norm:
+        audit_super_admin_action(
+            org_id=org_id,
+            actor_user_id=actor_sub,
+            action=ROLE_ASSIGN,
+            entity_type="USER",
+            entity_id=uid,
+            details={"system_role": {"from": original_role_norm, "to": new_role_norm}},
+        )
+    elif changes:
+        record_audit_event(
+            org_id=org_id,
+            actor_user_id=actor_sub,
+            action=STRUCTURE_UPDATE,
+            entity_type="USER",
+            entity_id=uid,
+            details=changes,
+        )
+
     return _emp_dict(user, db)
 
 
 @router.delete("/{uid}")
-def deactivate_employee(uid: str, db: Session = Depends(get_db), user_id: str = "", org_id: str = ""):
+def deactivate_employee(
+    uid: str,
+    db: Session = Depends(get_db),
+    org_id: str = "",
+    _auth: dict = Depends(require_super_admin_or_hr_head),
+):
     """Soft-delete: deactivate employee."""
+    actor_sub = str(_auth.get("sub") or "")
     user = db.query(User).filter(User.id == uid).first()
     if not user:
         raise HTTPException(404)
+    if user.org_id != org_id:
+        raise HTTPException(404)
     user.is_active = False
-    db.add(AuditLog(org_id=org_id, user_id=user_id, action="DEACTIVATE",
-                    entity_type="USER", entity_id=uid))
     db.commit()
+    record_audit_event(
+        org_id=org_id,
+        actor_user_id=actor_sub,
+        action=STRUCTURE_UPDATE,
+        entity_type="USER",
+        entity_id=uid,
+        details={"deactivated": True},
+    )
     return {"status": "deactivated"}
 
 

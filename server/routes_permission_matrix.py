@@ -8,11 +8,13 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List, Optional
 from server.database import get_db
-from server.models import RolePermissionRule, User
+from server.models import RolePermissionRule
 from server.permission_registry import (
     PERMISSION_REGISTRY, PERMISSION_CATEGORIES, HIERARCHY_SCOPES,
     SYSTEM_ROLES, ALL_ACTIONS,
 )
+from server.auth import require_super_admin
+from server.services.audit_service import audit_super_admin_action, ROLE_MATRIX_WRITE
 
 router = APIRouter(prefix="/api/permission-matrix", tags=["permission-matrix"])
 
@@ -93,11 +95,9 @@ def bulk_update_rules(
     payload: BulkPermissionUpdate,
     db: Session = Depends(get_db),
     org_id: str = "",
-    user_id: str = "",
-    role: str = "",
+    _auth: dict = Depends(require_super_admin),
 ):
-    """Bulk upsert permission rules for a role. Admin only."""
-    _assert_admin(user_id, db)
+    """Bulk upsert permission rules for a role. SUPER_ADMIN only."""
     upserted = 0
     for rule_data in payload.rules:
         existing = db.query(RolePermissionRule).filter(
@@ -131,13 +131,24 @@ def bulk_update_rules(
             ))
         upserted += 1
     db.commit()
+    audit_super_admin_action(
+        org_id=org_id,
+        actor_user_id=str(_auth.get("sub") or ""),
+        action=ROLE_MATRIX_WRITE,
+        entity_type="ROLE_PERMISSION_RULE",
+        entity_id=None,
+        details={"op": "bulk", "system_role": payload.system_role, "upserted": upserted},
+    )
     return {"upserted": upserted, "role": payload.system_role}
 
 
 @router.post("/seed-defaults")
-def seed_default_rules(db: Session = Depends(get_db), org_id: str = "", user_id: str = ""):
+def seed_default_rules(
+    db: Session = Depends(get_db),
+    org_id: str = "",
+    _auth: dict = Depends(require_super_admin),
+):
     """Seed sensible default permission rules for all system roles."""
-    _assert_admin(user_id, db)
     from server.permission_registry import PERMISSION_REGISTRY
     created = 0
     for role in SYSTEM_ROLES:
@@ -157,16 +168,18 @@ def seed_default_rules(db: Session = Depends(get_db), org_id: str = "", user_id:
             ))
             created += 1
     db.commit()
+    audit_super_admin_action(
+        org_id=org_id,
+        actor_user_id=str(_auth.get("sub") or ""),
+        action=ROLE_MATRIX_WRITE,
+        entity_type="ROLE_PERMISSION_RULE",
+        entity_id=org_id,
+        details={"op": "seed", "created": created},
+    )
     return {"seeded": created}
 
 
 # ── Helpers ──
-
-def _assert_admin(user_id: str, db: Session):
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user or user.system_role not in ("SUPER_ADMIN", "HR_ADMIN"):
-        raise HTTPException(403, "Only administrators can modify permissions")
-
 
 def _serialize_rule(r: RolePermissionRule) -> dict:
     return {

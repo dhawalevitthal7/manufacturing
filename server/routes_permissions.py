@@ -8,7 +8,6 @@ Implements enterprise RBAC:
 - Permission updates
 """
 
-import json
 import secrets
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
@@ -22,10 +21,16 @@ from server.schemas import (
     ModuleAccessCreate, ModuleAccessBulkUpdate, UserInvitationCreate,
     UserInvitationAccept, UserPermissionUpdate
 )
-from server.auth import get_password_hash, create_access_token
+from server.auth import _canonical_role_for_token, create_access_token, get_password_hash, require_super_admin, require_super_admin_or_hr_head
 from server.permissions_service import (
-    initialize_user_permissions, get_user_permission_profile, 
+    initialize_user_permissions, get_user_permission_profile,
     DEFAULT_ROLE_CAPABILITIES
+)
+from server.services.audit_service import (
+    audit_super_admin_action,
+    MODULE_ACCESS_WRITE,
+    PERMISSION_SEED,
+    ROLE_ASSIGN,
 )
 
 router = APIRouter(prefix="/api/permissions", tags=["permissions"])
@@ -61,6 +66,7 @@ DEFAULT_MODULES = [
 @router.get("/modules")
 def list_modules(db: Session = Depends(get_db)):
     """Get all dashboard modules. Seeds defaults if empty."""
+    # TODO(phase-3-followup): GET should not have write side-effects. Move seed logic to a dedicated POST.
     modules = db.query(DashboardModule).all()
     if not modules:
         for m in DEFAULT_MODULES:
@@ -99,7 +105,12 @@ def list_access_rules(db: Session = Depends(get_db), org_id: str = "", system_ro
 
 
 @router.post("/access")
-def create_access_rule(req: ModuleAccessCreate, db: Session = Depends(get_db), org_id: str = ""):
+def create_access_rule(
+    req: ModuleAccessCreate,
+    db: Session = Depends(get_db),
+    org_id: str = "",
+    _auth: dict = Depends(require_super_admin),
+):
     """Create a module access rule for a system_role or designation."""
     if not req.system_role and not req.designation_id:
         raise HTTPException(400, "Must specify system_role or designation_id")
@@ -112,11 +123,24 @@ def create_access_rule(req: ModuleAccessCreate, db: Session = Depends(get_db), o
     db.add(rule)
     db.commit()
     db.refresh(rule)
+    audit_super_admin_action(
+        org_id=org_id,
+        actor_user_id=str(_auth.get("sub") or ""),
+        action=MODULE_ACCESS_WRITE,
+        entity_type="MODULE_ACCESS",
+        entity_id=rule.id,
+        details={"op": "create", "module_id": req.module_id},
+    )
     return {"id": rule.id, "status": "created"}
 
 
 @router.post("/access/bulk")
-def bulk_update_access(req: ModuleAccessBulkUpdate, db: Session = Depends(get_db), org_id: str = ""):
+def bulk_update_access(
+    req: ModuleAccessBulkUpdate,
+    db: Session = Depends(get_db),
+    org_id: str = "",
+    _auth: dict = Depends(require_super_admin),
+):
     """Bulk set module access rules. Replaces existing rules for matching role/designation."""
     created = 0
     for r in req.access_rules:
@@ -137,22 +161,49 @@ def bulk_update_access(req: ModuleAccessBulkUpdate, db: Session = Depends(get_db
         db.add(rule)
         created += 1
     db.commit()
+    audit_super_admin_action(
+        org_id=org_id,
+        actor_user_id=str(_auth.get("sub") or ""),
+        action=MODULE_ACCESS_WRITE,
+        entity_type="MODULE_ACCESS",
+        entity_id=None,
+        details={"op": "bulk", "rules_written": created},
+    )
     return {"updated": created}
 
 
 @router.delete("/access/{rule_id}")
-def delete_access_rule(rule_id: str, db: Session = Depends(get_db)):
+def delete_access_rule(
+    rule_id: str,
+    db: Session = Depends(get_db),
+    org_id: str = "",
+    _auth: dict = Depends(require_super_admin),
+):
     """Delete a module access rule."""
-    rule = db.query(ModuleAccess).filter(ModuleAccess.id == rule_id).first()
+    rule = db.query(ModuleAccess).filter(ModuleAccess.id == rule_id, ModuleAccess.org_id == org_id).first()
     if not rule:
         raise HTTPException(404)
+    rid = rule.id
+    mid = rule.module_id
     db.delete(rule)
     db.commit()
+    audit_super_admin_action(
+        org_id=org_id,
+        actor_user_id=str(_auth.get("sub") or ""),
+        action=MODULE_ACCESS_WRITE,
+        entity_type="MODULE_ACCESS",
+        entity_id=rid,
+        details={"op": "delete", "module_id": mid},
+    )
     return {"status": "deleted"}
 
 
 @router.post("/seed-defaults")
-def seed_default_access(db: Session = Depends(get_db), org_id: str = ""):
+def seed_default_access(
+    db: Session = Depends(get_db),
+    org_id: str = "",
+    _auth: dict = Depends(require_super_admin),
+):
     """Seed sensible default module access for standard system roles."""
     # Ensure modules exist
     modules = db.query(DashboardModule).all()
@@ -167,6 +218,7 @@ def seed_default_access(db: Session = Depends(get_db), org_id: str = ""):
     # Create default rules based on each role's module list
     created = 0
     for role, capabilities in DEFAULT_ROLE_CAPABILITIES.items():
+        role_key = role.value
         for mod_key in capabilities.get("modules", []):
             mid = mod_map.get(mod_key)
             if not mid:
@@ -174,12 +226,12 @@ def seed_default_access(db: Session = Depends(get_db), org_id: str = ""):
             existing = db.query(ModuleAccess).filter(
                 ModuleAccess.org_id == org_id,
                 ModuleAccess.module_id == mid,
-                ModuleAccess.system_role == role
+                ModuleAccess.system_role == role_key,
             ).first()
             if existing:
                 continue
             rule = ModuleAccess(
-                org_id=org_id, module_id=mid, system_role=role,
+                org_id=org_id, module_id=mid, system_role=role_key,
                 can_view=True,
                 can_create=False,
                 can_approve=False,
@@ -187,8 +239,16 @@ def seed_default_access(db: Session = Depends(get_db), org_id: str = ""):
             )
             db.add(rule)
             created += 1
-    
+
     db.commit()
+    audit_super_admin_action(
+        org_id=org_id,
+        actor_user_id=str(_auth.get("sub") or ""),
+        action=PERMISSION_SEED,
+        entity_type="MODULE_ACCESS",
+        entity_id=org_id,
+        details={"created_rules": created},
+    )
     return {"created": created}
 
 
@@ -205,7 +265,7 @@ def get_my_modules(db: Session = Depends(get_db), org_id: str = "", user_id: str
     profile = get_user_permission_profile(user_id, db)
     if not profile:
         raise HTTPException(404, "User not found")
-    
+
     return profile.get("modules", [])
 
 
@@ -218,22 +278,22 @@ def get_my_permissions(db: Session = Depends(get_db), org_id: str = "", user_id:
     profile = get_user_permission_profile(user_id, db)
     if not profile:
         raise HTTPException(404, "User not found")
-    
+
     return profile
 
 
 @router.get("/user/{target_user_id}/profile")
-def get_user_permissions(target_user_id: str, db: Session = Depends(get_db), org_id: str = "", user_id: str = ""):
+def get_user_permissions(
+    target_user_id: str,
+    db: Session = Depends(get_db),
+    org_id: str = "",
+    _auth: dict = Depends(require_super_admin_or_hr_head),
+):
     """Get permission profile for a specific user (admin view)."""
-    # Verify requester has permission to view other users' permissions
-    requester = db.query(User).filter(User.id == user_id).first()
-    if not requester or requester.system_role not in ["SUPER_ADMIN", "HR_HEAD"]:
-        raise HTTPException(403, "Permission denied")
-
     profile = get_user_permission_profile(target_user_id, db)
     if not profile:
         raise HTTPException(404, "User not found")
-    
+
     return profile
 
 
@@ -243,28 +303,25 @@ def update_user_permissions(
     update: UserPermissionUpdate,
     db: Session = Depends(get_db),
     org_id: str = "",
-    user_id: str = ""
+    _auth: dict = Depends(require_super_admin),
 ):
-    """Update a user's role and permissions (admin only)."""
-    # Verify requester has permission to assign roles
-    requester = db.query(User).filter(User.id == user_id).first()
-    if not requester or requester.system_role not in ["SUPER_ADMIN", "HR_HEAD"]:
-        raise HTTPException(403, "Permission denied")
-
+    """Update a user's role and permissions (SUPER_ADMIN only)."""
     target_user = db.query(User).filter(User.id == target_user_id).first()
     if not target_user:
         raise HTTPException(404, "User not found")
+    if target_user.org_id != org_id:
+        raise HTTPException(404, "User not found")
 
-    # Update user assignment
-    if update.system_role:
+    payload = update.model_dump(exclude_unset=True)
+    if update.system_role is not None:
         target_user.system_role = update.system_role
-    if update.designation_id:
+    if update.designation_id is not None:
         target_user.designation_id = update.designation_id
-    if update.plant_id:
+    if update.plant_id is not None:
         target_user.plant_id = update.plant_id
-    if update.department_id:
+    if update.department_id is not None:
         target_user.department_id = update.department_id
-    if update.team_id:
+    if update.team_id is not None:
         target_user.team_id = update.team_id
 
     db.add(target_user)
@@ -272,6 +329,15 @@ def update_user_permissions(
 
     # Reinitialize permission profile
     initialize_user_permissions(target_user, db)
+
+    audit_super_admin_action(
+        org_id=org_id,
+        actor_user_id=str(_auth.get("sub") or ""),
+        action=ROLE_ASSIGN,
+        entity_type="USER",
+        entity_id=target_user_id,
+        details={"fields": list(payload.keys()), "values": payload},
+    )
 
     return get_user_permission_profile(target_user_id, db)
 
@@ -285,16 +351,13 @@ def invite_user(
     invitation: UserInvitationCreate,
     db: Session = Depends(get_db),
     org_id: str = "",
-    user_id: str = ""
+    _auth: dict = Depends(require_super_admin_or_hr_head),
 ):
     """
     Invite a user with pre-assigned role and permissions.
     Sends invitation with temporary token.
     """
-    # Verify requester can invite
-    requester = db.query(User).filter(User.id == user_id).first()
-    if not requester or requester.system_role not in ["SUPER_ADMIN", "HR_HEAD"]:
-        raise HTTPException(403, "Permission denied")
+    user_id = str(_auth.get("sub") or "")
 
     # Check if email already exists
     existing = db.query(User).filter(User.email == invitation.invited_email).first()
@@ -330,7 +393,7 @@ def invite_user(
 
     # TODO: Send email with invitation link containing token
     # Email should include: invitation_url + token
-    
+
     return {
         "id": user_inv.id,
         "email": user_inv.invited_email,
@@ -348,7 +411,7 @@ def accept_invitation(accept: UserInvitationAccept, db: Session = Depends(get_db
         UserInvitation.invitation_token == accept.invitation_token,
         UserInvitation.status == "PENDING"
     ).first()
-    
+
     if not invitation:
         raise HTTPException(404, "Invalid or expired invitation")
 
@@ -393,7 +456,9 @@ def accept_invitation(accept: UserInvitationAccept, db: Session = Depends(get_db
     # Initialize permissions
     initialize_user_permissions(user, db)
 
-    token = create_access_token({"sub": user.id, "org_id": user.org_id, "role": user.system_role})
+    token = create_access_token(
+        {"sub": user.id, "org_id": user.org_id, "role": _canonical_role_for_token(user.system_role)}
+    )
 
     return {
         "access_token": token,
@@ -411,12 +476,12 @@ def accept_invitation(accept: UserInvitationAccept, db: Session = Depends(get_db
 
 
 @router.get("/invitations")
-def list_invitations(db: Session = Depends(get_db), org_id: str = "", user_id: str = ""):
+def list_invitations(
+    db: Session = Depends(get_db),
+    org_id: str = "",
+    _auth: dict = Depends(require_super_admin_or_hr_head),
+):
     """List all pending and accepted invitations for an org (admin view)."""
-    requester = db.query(User).filter(User.id == user_id).first()
-    if not requester or requester.system_role not in ["SUPER_ADMIN", "HR_HEAD"]:
-        raise HTTPException(403, "Permission denied")
-
     invitations = db.query(UserInvitation).filter(UserInvitation.org_id == org_id).all()
     return [
         {
@@ -433,13 +498,17 @@ def list_invitations(db: Session = Depends(get_db), org_id: str = "", user_id: s
 
 
 @router.delete("/invitations/{invitation_id}")
-def revoke_invitation(invitation_id: str, db: Session = Depends(get_db), user_id: str = ""):
+def revoke_invitation(
+    invitation_id: str,
+    db: Session = Depends(get_db),
+    org_id: str = "",
+    _auth: dict = Depends(require_super_admin_or_hr_head),
+):
     """Revoke a pending invitation."""
-    requester = db.query(User).filter(User.id == user_id).first()
-    if not requester or requester.system_role not in ["SUPER_ADMIN", "HR_HEAD"]:
-        raise HTTPException(403, "Permission denied")
-
-    invitation = db.query(UserInvitation).filter(UserInvitation.id == invitation_id).first()
+    invitation = db.query(UserInvitation).filter(
+        UserInvitation.id == invitation_id,
+        UserInvitation.org_id == org_id,
+    ).first()
     if not invitation:
         raise HTTPException(404, "Invitation not found")
 

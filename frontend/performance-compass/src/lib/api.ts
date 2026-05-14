@@ -147,9 +147,19 @@ export interface OrgNodeUpdateRequest {
   node_metadata?: Record<string, unknown>;
 }
 
+/** Body for POST /api/org-tree/regions and POST /api/org-tree/corporate-functions */
+export interface OrgTreeNamedNodeCreate {
+  name: string;
+  code?: string | null;
+  head_user_id?: string | null;
+}
+
 export interface PlantCreate {
   name: string;
   location?: string;
+  code?: string;
+  /** When omitted, backend assigns plant under org root. */
+  region_id?: string;
 }
 
 export interface DepartmentCreate {
@@ -677,6 +687,7 @@ export interface UserPermissionProfile {
   scoped_plant_id?: string;
   scoped_department_id?: string;
   scoped_team_id?: string;
+  scoped_region_id?: string;
   can_view_all_plants: boolean;
   can_view_all_departments: boolean;
   can_view_all_teams: boolean;
@@ -1289,7 +1300,8 @@ class APIClient {
   }
 
   async addTeamMember(teamId: string, data: { user_id: string; is_team_lead?: boolean }): Promise<any> {
-    const params: Record<string, string | boolean> = { user_id: data.user_id };
+    // Query param must not be `user_id`: middleware injects JWT `user_id` and would clobber the member id.
+    const params: Record<string, string | boolean> = { member_user_id: data.user_id };
     if (data.is_team_lead !== undefined) params.is_team_lead = data.is_team_lead;
     return this.request<any>("POST", `/api/teams/${teamId}/members`, undefined, { params });
   }
@@ -1492,8 +1504,12 @@ class APIClient {
   // ORG TREE ENDPOINTS
   // ========================================================================
 
-  async fetchOrgTree(): Promise<OrgNode> {
-    return this.request<OrgNode>("GET", "/api/org-tree");
+  async fetchOrgTree(): Promise<OrgNode | { roots: OrgNode[] }> {
+    const t = await this.request<OrgNode | { roots: OrgNode[] } | { error: string }>("GET", "/api/org-tree");
+    if (t && typeof t === "object" && "error" in t && !("id" in t) && !("roots" in t)) {
+      throw new Error(String((t as { error: string }).error));
+    }
+    return t as OrgNode | { roots: OrgNode[] };
   }
 
   async fetchOrgNode(nodeId: string): Promise<OrgNode> {
@@ -1510,6 +1526,14 @@ class APIClient {
 
   async deleteOrgNode(nodeId: string): Promise<{ status: string; node_id: string }> {
     return this.request<{ status: string; node_id: string }>("DELETE", `/api/org-tree/${nodeId}`);
+  }
+
+  async createRegion(body: OrgTreeNamedNodeCreate): Promise<OrgNode> {
+    return this.request<OrgNode>("POST", "/api/org-tree/regions", body);
+  }
+
+  async createCorporateFunction(body: OrgTreeNamedNodeCreate): Promise<OrgNode> {
+    return this.request<OrgNode>("POST", "/api/org-tree/corporate-functions", body);
   }
 
 }

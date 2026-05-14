@@ -1,10 +1,14 @@
 import type { NavDefinition } from "../nav-definition";
 import { CEO_NAV } from "./ceo";
+import { CFO_NAV } from "./cfo";
+import { CMO_NAV } from "./cmo";
+import { CTO_NAV } from "./cto";
 import { DEPT_HEAD_NAV } from "./dept-head";
 import { EMPLOYEE_NAV } from "./employee";
 import { HR_HEAD_NAV } from "./hr-head";
 import { MANAGER_NAV } from "./manager";
 import { PLANT_HEAD_NAV } from "./plant-head";
+import { REGIONAL_HEAD_NAV } from "./regional-head";
 import { SUPER_ADMIN_NAV } from "./super-admin";
 import { SUPERVISOR_NAV } from "./supervisor";
 import { TEAM_LEAD_NAV } from "./team-lead";
@@ -15,6 +19,10 @@ export const ALL_NAV_DEFINITIONS: NavDefinition[] = [
   ...SUPER_ADMIN_NAV,
   ...CEO_NAV,
   ...VP_OPERATIONS_NAV,
+  ...REGIONAL_HEAD_NAV,
+  ...CFO_NAV,
+  ...CMO_NAV,
+  ...CTO_NAV,
   ...PLANT_HEAD_NAV,
   ...DEPT_HEAD_NAV,
   ...MANAGER_NAV,

@@ -323,6 +323,33 @@ POST /api/permissions/access
 2. Verify `seed-defaults` was called
 3. Check permission profile was initialized on registration
 
+## Manual operational scripts
+
+These are **operator-run, DB-level** utilities. They are **not** exposed as HTTP APIs, **not** run from app startup, and **not** wired into migrations.
+
+### `server/scripts/seed_default_region.py`
+
+- **Purpose:** Introduce a **Region** layer for a tenant that still has **PLANT** org nodes attached **directly** to the organization root (`parent_id == org_id`). Creates a single active `REGION` named **Default Region** under the org root, then **reparents** each such plant under that region using **`move_node`** (same helper as org-tree routes), so **path/depth** stay correct for plants and **all descendants** (departments, teams, etc.).
+- **When to use:** The tenant has **outgrown a flat list** of plants under the org root (often after **~3+ plants**) and wants to **group by geography or business unit** without re-entering plants in the UI.
+- **Safety:** **Idempotent** (if **Default Region** already exists for that org, the script exits successfully and does nothing). Real runs use a **single transaction** (failure rolls back the new region and all moves). **`--dry-run`** prints the planned plant and descendant counts **without** writing.
+- **Auth context:** Run by someone with **direct database access** (and the app venv / `PYTHONPATH` from repo root). There is **no API** for this and **no RBAC inside the script**; it mutates tenant org data **on behalf of** the tenant.
+- **Example:** `python -m server.scripts.seed_default_region --org-id <organizations.id>`  
+  Dry-run: add `--dry-run`.
+- **Does not:** Set a **head** on the region, **rename** plants, or **detach** departments/teams from plants beyond **path/depth updates** implied by **`move_node`**.
+
+### `scripts/backfill_permission_profiles.py`
+
+- **Purpose:** Delete each `UserPermissionProfile` row and recreate it via `initialize_user_permissions` so flags, `scope_type`, `scoped_region_id`, and serialized `module_permissions` match the current `DEFAULT_ROLE_CAPABILITIES` (Phase 3.4+).
+- **When to use:** Immediately after deploying a change to the default capability matrix or region scoping, before relying on `GET /api/permissions/my-permissions` for existing users. **Not** run from app startup or migrations.
+- **Safety:** Per-user **savepoint** (`begin_nested`): one failure rolls back that user only. **Idempotent** in practice: a second run usually reports most profiles as **unchanged** (signature already matches). Prints a short summary to stdout.
+- **Auth context:** Run by someone with **direct database access** (repo root on `PYTHONPATH`). No HTTP API.
+- **Example:** `python scripts/backfill_permission_profiles.py`  
+  Dry-run: `python scripts/backfill_permission_profiles.py --dry-run`
+
+## Carry-forward to Phase 4
+
+- **REGION scope vs OKR assignment:** `okr_hierarchy_workflow.can_assign_okr_to_user` uses coarse `scope_type` allow-lists and does **not** treat `REGION` like `PLANT` for assignee eligibility. A `REGIONAL_HEAD` creating a **PLANT**-level OKR cannot reliably assign it to employees under plants in their region until Phase 4 adds **path-based** scope checks (see NOTE in that function).
+
 ## Next Steps
 
 1. **Email Integration** - Send actual invitation emails with tokens

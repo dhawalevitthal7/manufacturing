@@ -10,19 +10,74 @@ BUT comprehensive enterprise RBAC with organization-specific configuration.
 
 import json
 from typing import Dict, List, Optional
+
 from sqlalchemy.orm import Session
+
 from server.models import (
-    User, UserPermissionProfile, UserInvitation, ModuleAccess, DashboardModule,
-    Designation, Plant, Department, Team
+    User,
+    UserPermissionProfile,
+    ModuleAccess,
+    DashboardModule,
+    OrgNode,
 )
+from server.roles import SystemRole, normalize_role
 
 
 # ===== DEFAULT PERMISSION MATRIX =====
-# This defines what each role CAN DO by default
-# Organizations can override in ModuleAccess table
+# Keys are SystemRole enum members; organizations can override in ModuleAccess table.
 
-DEFAULT_ROLE_CAPABILITIES = {
-    "SUPER_ADMIN": {
+_SUPER_ADMIN_MODULES: tuple[str, ...] = (
+    "ORG_OKRS",
+    "PLANT_OKRS",
+    "DEPT_OKRS",
+    "TEAM_OKRS",
+    "EMPLOYEE_OKRS",
+    "PROGRESS_TRACKING",
+    "ALIGNMENT_DASHBOARD",
+    "REVIEW_DASHBOARD",
+    "REVIEW_ANALYTICS",
+    "TEAM_MANAGEMENT",
+    "DEPT_VISIBILITY",
+    "PLANT_VISIBILITY",
+    "ORG_VISIBILITY",
+    "EMPLOYEE_DIRECTORY",
+    "REPORTING_STRUCTURE",
+    "APPROVAL_QUEUE",
+    "ESCALATION_MGMT",
+    "AI_INSIGHTS",
+    "AUDIT_LOGS",
+)
+
+_VP_OPS_STYLE_MODULES: tuple[str, ...] = (
+    "PLANT_OKRS",
+    "DEPT_OKRS",
+    "TEAM_OKRS",
+    "PROGRESS_TRACKING",
+    "ALIGNMENT_DASHBOARD",
+    "REVIEW_DASHBOARD",
+    "REVIEW_ANALYTICS",
+    "APPROVAL_QUEUE",
+    "ESCALATION_MGMT",
+    "AI_INSIGHTS",
+)
+
+
+def _capabilities_for_role(role: SystemRole) -> dict:
+    return DEFAULT_ROLE_CAPABILITIES.get(role, DEFAULT_ROLE_CAPABILITIES[SystemRole.EMPLOYEE])
+
+
+def _region_scope_id_for_user(user: User, db: Session) -> Optional[str]:
+    """Resolve REGION org node id for REGIONAL_HEAD from user.org_node_id when it points at a REGION."""
+    if not user.org_node_id:
+        return None
+    node = db.query(OrgNode).filter(OrgNode.id == user.org_node_id).first()
+    if node and str(node.node_type) == "REGION":
+        return node.id
+    return None
+
+
+DEFAULT_ROLE_CAPABILITIES: dict[SystemRole, dict] = {
+    SystemRole.SUPER_ADMIN: {
         "scope_type": "ORGANIZATION",
         "can_view_all_plants": True,
         "can_view_all_departments": True,
@@ -37,21 +92,14 @@ DEFAULT_ROLE_CAPABILITIES = {
         "can_assign_roles": True,
         "can_access_analytics": True,
         "can_access_audit_logs": True,
-        "modules": [
-            "ORG_OKRS", "PLANT_OKRS", "DEPT_OKRS", "TEAM_OKRS", "EMPLOYEE_OKRS",
-            "PROGRESS_TRACKING", "ALIGNMENT_DASHBOARD", "REVIEW_DASHBOARD",
-            "REVIEW_ANALYTICS", "TEAM_MANAGEMENT", "DEPT_VISIBILITY",
-            "PLANT_VISIBILITY", "ORG_VISIBILITY", "EMPLOYEE_DIRECTORY",
-            "REPORTING_STRUCTURE", "APPROVAL_QUEUE", "ESCALATION_MGMT",
-            "AI_INSIGHTS", "AUDIT_LOGS"
-        ]
+        "modules": list(_SUPER_ADMIN_MODULES),
     },
-    "CEO": {
+    SystemRole.CEO: {
         "scope_type": "ORGANIZATION",
         "can_view_all_plants": True,
         "can_view_all_departments": True,
         "can_view_all_teams": True,
-        "can_view_all_employees": False,
+        "can_view_all_employees": True,
         "can_create_plants": False,
         "can_create_departments": False,
         "can_create_teams": False,
@@ -60,13 +108,18 @@ DEFAULT_ROLE_CAPABILITIES = {
         "can_invite_employees": False,
         "can_assign_roles": False,
         "can_access_analytics": True,
-        "can_access_audit_logs": False,
+        "can_access_audit_logs": True,
         "modules": [
-            "ORG_OKRS", "PLANT_OKRS", "DEPT_OKRS", "TEAM_OKRS",
-            "ALIGNMENT_DASHBOARD", "REVIEW_ANALYTICS", "AI_INSIGHTS"
-        ]
+            "ORG_OKRS",
+            "PLANT_OKRS",
+            "DEPT_OKRS",
+            "TEAM_OKRS",
+            "ALIGNMENT_DASHBOARD",
+            "REVIEW_ANALYTICS",
+            "AI_INSIGHTS",
+        ],
     },
-    "VP_OPERATIONS": {
+    SystemRole.VP_OPERATIONS: {
         "scope_type": "ORGANIZATION",
         "can_view_all_plants": True,
         "can_view_all_departments": True,
@@ -81,13 +134,103 @@ DEFAULT_ROLE_CAPABILITIES = {
         "can_assign_roles": False,
         "can_access_analytics": True,
         "can_access_audit_logs": False,
-        "modules": [
-            "PLANT_OKRS", "DEPT_OKRS", "TEAM_OKRS", "PROGRESS_TRACKING",
-            "ALIGNMENT_DASHBOARD", "REVIEW_DASHBOARD", "REVIEW_ANALYTICS",
-            "APPROVAL_QUEUE", "ESCALATION_MGMT", "AI_INSIGHTS"
-        ]
+        "modules": list(_VP_OPS_STYLE_MODULES),
     },
-    "PLANT_HEAD": {
+    SystemRole.REGIONAL_HEAD: {
+        "scope_type": "REGION",
+        "can_view_all_plants": True,
+        "can_view_all_departments": True,
+        "can_view_all_teams": True,
+        "can_view_all_employees": True,
+        "can_create_plants": False,
+        "can_create_departments": False,
+        "can_create_teams": False,
+        "can_create_designations": False,
+        "can_configure_permissions": False,
+        "can_invite_employees": False,
+        "can_assign_roles": False,
+        "can_access_analytics": True,
+        "can_access_audit_logs": False,
+        "modules": list(_VP_OPS_STYLE_MODULES),
+    },
+    SystemRole.CFO: {
+        "scope_type": "ORGANIZATION",
+        "can_view_all_plants": True,
+        "can_view_all_departments": True,
+        "can_view_all_teams": True,
+        "can_view_all_employees": True,
+        "can_create_plants": False,
+        "can_create_departments": False,
+        "can_create_teams": False,
+        "can_create_designations": False,
+        "can_configure_permissions": False,
+        "can_invite_employees": False,
+        "can_assign_roles": False,
+        "can_access_analytics": True,
+        "can_access_audit_logs": True,
+        "modules": [
+            "ORG_OKRS",
+            "ORG_VISIBILITY",
+            "PLANT_OKRS",
+            "DEPT_OKRS",
+            "ALIGNMENT_DASHBOARD",
+            "REVIEW_ANALYTICS",
+            "APPROVAL_QUEUE",
+            "AI_INSIGHTS",
+        ],
+    },
+    SystemRole.CMO: {
+        "scope_type": "ORGANIZATION",
+        "can_view_all_plants": True,
+        "can_view_all_departments": True,
+        "can_view_all_teams": True,
+        "can_view_all_employees": True,
+        "can_create_plants": False,
+        "can_create_departments": False,
+        "can_create_teams": False,
+        "can_create_designations": False,
+        "can_configure_permissions": False,
+        "can_invite_employees": False,
+        "can_assign_roles": False,
+        "can_access_analytics": True,
+        "can_access_audit_logs": False,
+        "modules": [
+            "ORG_OKRS",
+            "ORG_VISIBILITY",
+            "DEPT_OKRS",
+            "TEAM_OKRS",
+            "ALIGNMENT_DASHBOARD",
+            "REVIEW_DASHBOARD",
+            "REVIEW_ANALYTICS",
+            "AI_INSIGHTS",
+        ],
+    },
+    SystemRole.CTO: {
+        "scope_type": "ORGANIZATION",
+        "can_view_all_plants": True,
+        "can_view_all_departments": True,
+        "can_view_all_teams": True,
+        "can_view_all_employees": True,
+        "can_create_plants": False,
+        "can_create_departments": False,
+        "can_create_teams": False,
+        "can_create_designations": False,
+        "can_configure_permissions": False,
+        "can_invite_employees": False,
+        "can_assign_roles": False,
+        "can_access_analytics": True,
+        "can_access_audit_logs": False,
+        "modules": [
+            "PLANT_OKRS",
+            "DEPT_OKRS",
+            "TEAM_OKRS",
+            "EMPLOYEE_OKRS",
+            "PROGRESS_TRACKING",
+            "ALIGNMENT_DASHBOARD",
+            "AI_INSIGHTS",
+        ],
+    },
+    SystemRole.PLANT_HEAD: {
         "scope_type": "PLANT",
         "can_view_all_plants": False,
         "can_view_all_departments": False,
@@ -103,13 +246,22 @@ DEFAULT_ROLE_CAPABILITIES = {
         "can_access_analytics": True,
         "can_access_audit_logs": False,
         "modules": [
-            "PLANT_OKRS", "DEPT_OKRS", "TEAM_OKRS", "EMPLOYEE_OKRS",
-            "PROGRESS_TRACKING", "ALIGNMENT_DASHBOARD", "REVIEW_DASHBOARD",
-            "REVIEW_ANALYTICS", "TEAM_MANAGEMENT", "DEPT_VISIBILITY",
-            "APPROVAL_QUEUE", "ESCALATION_MGMT", "AI_INSIGHTS"
-        ]
+            "PLANT_OKRS",
+            "DEPT_OKRS",
+            "TEAM_OKRS",
+            "EMPLOYEE_OKRS",
+            "PROGRESS_TRACKING",
+            "ALIGNMENT_DASHBOARD",
+            "REVIEW_DASHBOARD",
+            "REVIEW_ANALYTICS",
+            "TEAM_MANAGEMENT",
+            "DEPT_VISIBILITY",
+            "APPROVAL_QUEUE",
+            "ESCALATION_MGMT",
+            "AI_INSIGHTS",
+        ],
     },
-    "DEPT_HEAD": {
+    SystemRole.DEPT_HEAD: {
         "scope_type": "DEPARTMENT",
         "can_view_all_plants": False,
         "can_view_all_departments": False,
@@ -125,12 +277,20 @@ DEFAULT_ROLE_CAPABILITIES = {
         "can_access_analytics": True,
         "can_access_audit_logs": False,
         "modules": [
-            "DEPT_OKRS", "TEAM_OKRS", "EMPLOYEE_OKRS", "PROGRESS_TRACKING",
-            "ALIGNMENT_DASHBOARD", "REVIEW_DASHBOARD", "REVIEW_ANALYTICS",
-            "TEAM_MANAGEMENT", "APPROVAL_QUEUE", "ESCALATION_MGMT", "AI_INSIGHTS"
-        ]
+            "DEPT_OKRS",
+            "TEAM_OKRS",
+            "EMPLOYEE_OKRS",
+            "PROGRESS_TRACKING",
+            "ALIGNMENT_DASHBOARD",
+            "REVIEW_DASHBOARD",
+            "REVIEW_ANALYTICS",
+            "TEAM_MANAGEMENT",
+            "APPROVAL_QUEUE",
+            "ESCALATION_MGMT",
+            "AI_INSIGHTS",
+        ],
     },
-    "MANAGER": {
+    SystemRole.MANAGER: {
         "scope_type": "TEAM",
         "can_view_all_plants": False,
         "can_view_all_departments": False,
@@ -146,12 +306,17 @@ DEFAULT_ROLE_CAPABILITIES = {
         "can_access_analytics": True,
         "can_access_audit_logs": False,
         "modules": [
-            "TEAM_OKRS", "EMPLOYEE_OKRS", "PROGRESS_TRACKING",
-            "ALIGNMENT_DASHBOARD", "REVIEW_DASHBOARD", "TEAM_MANAGEMENT",
-            "APPROVAL_QUEUE", "ESCALATION_MGMT"
-        ]
+            "TEAM_OKRS",
+            "EMPLOYEE_OKRS",
+            "PROGRESS_TRACKING",
+            "ALIGNMENT_DASHBOARD",
+            "REVIEW_DASHBOARD",
+            "TEAM_MANAGEMENT",
+            "APPROVAL_QUEUE",
+            "ESCALATION_MGMT",
+        ],
     },
-    "TEAM_LEAD": {
+    SystemRole.TEAM_LEAD: {
         "scope_type": "TEAM",
         "can_view_all_plants": False,
         "can_view_all_departments": False,
@@ -167,11 +332,15 @@ DEFAULT_ROLE_CAPABILITIES = {
         "can_access_analytics": False,
         "can_access_audit_logs": False,
         "modules": [
-            "TEAM_OKRS", "EMPLOYEE_OKRS", "PROGRESS_TRACKING",
-            "ALIGNMENT_DASHBOARD", "APPROVAL_QUEUE", "ESCALATION_MGMT"
-        ]
+            "TEAM_OKRS",
+            "EMPLOYEE_OKRS",
+            "PROGRESS_TRACKING",
+            "ALIGNMENT_DASHBOARD",
+            "APPROVAL_QUEUE",
+            "ESCALATION_MGMT",
+        ],
     },
-    "SUPERVISOR": {
+    SystemRole.SUPERVISOR: {
         "scope_type": "TEAM",
         "can_view_all_plants": False,
         "can_view_all_departments": False,
@@ -186,11 +355,9 @@ DEFAULT_ROLE_CAPABILITIES = {
         "can_assign_roles": False,
         "can_access_analytics": False,
         "can_access_audit_logs": False,
-        "modules": [
-            "EMPLOYEE_OKRS", "PROGRESS_TRACKING", "APPROVAL_QUEUE"
-        ]
+        "modules": ["EMPLOYEE_OKRS", "PROGRESS_TRACKING", "APPROVAL_QUEUE"],
     },
-    "EMPLOYEE": {
+    SystemRole.EMPLOYEE: {
         "scope_type": "INDIVIDUAL",
         "can_view_all_plants": False,
         "can_view_all_departments": False,
@@ -206,10 +373,14 @@ DEFAULT_ROLE_CAPABILITIES = {
         "can_access_analytics": False,
         "can_access_audit_logs": False,
         "modules": [
-            "EMPLOYEE_OKRS", "PROGRESS_TRACKING", "ALIGNMENT_DASHBOARD", "REVIEW_DASHBOARD", "AI_OKR_ASSIST"
-        ]
+            "EMPLOYEE_OKRS",
+            "PROGRESS_TRACKING",
+            "ALIGNMENT_DASHBOARD",
+            "REVIEW_DASHBOARD",
+            "AI_OKR_ASSIST",
+        ],
     },
-    "HR_HEAD": {
+    SystemRole.HR_HEAD: {
         "scope_type": "ORGANIZATION",
         "can_view_all_plants": True,
         "can_view_all_departments": True,
@@ -223,16 +394,54 @@ DEFAULT_ROLE_CAPABILITIES = {
         "can_invite_employees": True,
         "can_assign_roles": False,
         "can_access_analytics": True,
-        "can_access_audit_logs": False,
+        "can_access_audit_logs": True,
         "modules": [
-            "REVIEW_DASHBOARD", "REVIEW_ANALYTICS", "EMPLOYEE_DIRECTORY",
-            "REPORTING_STRUCTURE", "APPROVAL_QUEUE", "AI_INSIGHTS"
-        ]
-    }
+            "REVIEW_DASHBOARD",
+            "REVIEW_ANALYTICS",
+            "EMPLOYEE_DIRECTORY",
+            "REPORTING_STRUCTURE",
+            "APPROVAL_QUEUE",
+            "AI_INSIGHTS",
+        ],
+    },
 }
 
 
-def initialize_user_permissions(user: User, db: Session) -> UserPermissionProfile:
+def _profile_capability_signature(profile: UserPermissionProfile) -> tuple:
+    """Stable tuple for idempotent backfill: did this profile already match defaults?"""
+    raw_mods = profile.module_permissions or ""
+    try:
+        arr = json.loads(raw_mods) if raw_mods else []
+        mods_norm = json.dumps(sorted(arr, key=lambda x: str(x.get("module_key", ""))))
+    except json.JSONDecodeError:
+        mods_norm = raw_mods
+    return (
+        profile.system_role,
+        profile.scope_type,
+        profile.scoped_plant_id,
+        profile.scoped_department_id,
+        profile.scoped_team_id,
+        getattr(profile, "scoped_region_id", None),
+        profile.can_view_all_plants,
+        profile.can_view_all_departments,
+        profile.can_view_all_teams,
+        profile.can_view_all_employees,
+        profile.can_create_plants,
+        profile.can_create_departments,
+        profile.can_create_teams,
+        profile.can_create_designations,
+        profile.can_configure_permissions,
+        profile.can_invite_employees,
+        profile.can_assign_roles,
+        profile.can_access_analytics,
+        profile.can_access_audit_logs,
+        mods_norm,
+    )
+
+
+def initialize_user_permissions(
+    user: User, db: Session, *, commit: bool = True
+) -> UserPermissionProfile:
     """
     Initialize or update a user's permission profile based on their role.
     Called when:
@@ -240,8 +449,8 @@ def initialize_user_permissions(user: User, db: Session) -> UserPermissionProfil
     2. User is invited/created with a specific role
     3. User's role is changed
     """
-    # Get base capabilities for this role
-    capabilities = DEFAULT_ROLE_CAPABILITIES.get(user.system_role, DEFAULT_ROLE_CAPABILITIES["EMPLOYEE"])
+    role = normalize_role(user.system_role)
+    capabilities = _capabilities_for_role(role)
 
     # Build module permissions by querying ModuleAccess rules
     module_permissions = _get_module_permissions(user, db)
@@ -262,10 +471,15 @@ def initialize_user_permissions(user: User, db: Session) -> UserPermissionProfil
     profile.designation_id = user.designation_id
     profile.scope_type = capabilities["scope_type"]
 
-    # Set hierarchy scope
+    # Set hierarchy scope (legacy plant/dept/team columns)
     profile.scoped_plant_id = user.plant_id
     profile.scoped_department_id = user.department_id
     profile.scoped_team_id = user.team_id
+
+    if capabilities["scope_type"] == "REGION":
+        profile.scoped_region_id = _region_scope_id_for_user(user, db)
+    else:
+        profile.scoped_region_id = None
 
     # Set capabilities
     profile.can_view_all_plants = capabilities["can_view_all_plants"]
@@ -286,8 +500,11 @@ def initialize_user_permissions(user: User, db: Session) -> UserPermissionProfil
     profile.module_permissions = json.dumps(module_permissions)
 
     db.add(profile)
-    db.commit()
-    db.refresh(profile)
+    if commit:
+        db.commit()
+        db.refresh(profile)
+    else:
+        db.flush()
     return profile
 
 
@@ -312,7 +529,7 @@ def get_user_permission_profile(user_id: str, db: Session) -> Optional[Dict]:
     if profile.module_permissions:
         try:
             modules = json.loads(profile.module_permissions)
-        except:
+        except json.JSONDecodeError:
             modules = []
 
     return {
@@ -323,6 +540,7 @@ def get_user_permission_profile(user_id: str, db: Session) -> Optional[Dict]:
         "scoped_plant_id": profile.scoped_plant_id,
         "scoped_department_id": profile.scoped_department_id,
         "scoped_team_id": profile.scoped_team_id,
+        "scoped_region_id": profile.scoped_region_id,
         "can_view_all_plants": profile.can_view_all_plants,
         "can_view_all_departments": profile.can_view_all_departments,
         "can_view_all_teams": profile.can_view_all_teams,
@@ -363,12 +581,15 @@ def _get_module_permissions(user: User, db: Session) -> List[Dict]:
         ]
 
     # Query ModuleAccess rules for this role and designation
-    rules = db.query(ModuleAccess).filter(
-        ModuleAccess.org_id == user.org_id,
-    ).filter(
-        (ModuleAccess.system_role == user.system_role) |
-        (ModuleAccess.designation_id == user.designation_id)
-    ).all()
+    rules = (
+        db.query(ModuleAccess)
+        .filter(ModuleAccess.org_id == user.org_id)
+        .filter(
+            (ModuleAccess.system_role == user.system_role)
+            | (ModuleAccess.designation_id == user.designation_id)
+        )
+        .all()
+    )
 
     # Merge permissions (OR logic)
     module_perms = {}
@@ -395,7 +616,8 @@ def _get_module_permissions(user: User, db: Session) -> List[Dict]:
         p["can_delete"] = p["can_delete"] or rule.can_delete
 
     # Add default module access from DEFAULT_ROLE_CAPABILITIES
-    role_default_modules = DEFAULT_ROLE_CAPABILITIES.get(user.system_role, {}).get("modules", [])
+    role_enum = normalize_role(user.system_role)
+    role_default_modules = _capabilities_for_role(role_enum).get("modules", [])
     for mod_key in role_default_modules:
         if mod_key not in module_perms:
             mod = db.query(DashboardModule).filter(DashboardModule.key == mod_key).first()

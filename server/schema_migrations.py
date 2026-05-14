@@ -37,6 +37,9 @@ TABLE_COLUMNS: dict[str, list[tuple[str, str]]] = {
     "users": [
         ("org_node_id", "VARCHAR(255)"),
     ],
+    "user_permission_profiles": [
+        ("scoped_region_id", "VARCHAR(255)"),
+    ],
 }
 
 

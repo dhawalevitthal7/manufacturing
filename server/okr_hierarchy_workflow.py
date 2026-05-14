@@ -36,6 +36,11 @@ from server.models import (
     Plant, Department, Team, TeamMember, ReportingRelationship,
     UserPermissionProfile, Organization,
 )
+from server.roles import (
+    allowed_objective_levels_for,
+    can_create_objective_at_level,
+    normalize_role,
+)
 
 
 class OKRHierarchyWorkflow:
@@ -60,47 +65,14 @@ class OKRHierarchyWorkflow:
 
     LEVEL_ORDER = ["ORGANIZATION", "PLANT", "DEPARTMENT", "TEAM", "INDIVIDUAL"]
 
-    # Map system_role to allowed OKR creation levels
-    ROLE_CREATION_LEVELS = {
-        "SUPER_ADMIN": ["ORGANIZATION", "PLANT", "DEPARTMENT", "TEAM", "INDIVIDUAL"],
-        "CEO": ["ORGANIZATION"],
-        "VP_OPERATIONS": ["PLANT", "DEPARTMENT"],
-        "VP_MANUFACTURING": ["PLANT", "DEPARTMENT"],
-        "PLANT_HEAD": ["PLANT", "DEPARTMENT", "TEAM"],
-        "OPERATIONS_HEAD": ["PLANT", "DEPARTMENT"],
-        "DEPT_HEAD": ["DEPARTMENT", "TEAM"],
-        "MANAGER": ["TEAM", "INDIVIDUAL"],
-        "TEAM_LEAD": ["INDIVIDUAL"],
-        "SUPERVISOR": ["INDIVIDUAL"],
-        "EMPLOYEE": [],  # Cannot create strategic OKRs
-        "OPERATOR": [],
-        "TECHNICIAN": [],
-    }
-
-    # Map system_role to required scope for creation
-    ROLE_CREATION_SCOPE = {
-        "SUPER_ADMIN": "ORGANIZATION",
-        "CEO": "ORGANIZATION",
-        "VP_OPERATIONS": "ORGANIZATION",
-        "VP_MANUFACTURING": "ORGANIZATION",
-        "PLANT_HEAD": "PLANT",
-        "OPERATIONS_HEAD": "PLANT",
-        "DEPT_HEAD": "DEPARTMENT",
-        "MANAGER": "TEAM",
-        "TEAM_LEAD": "TEAM",
-        "SUPERVISOR": "TEAM",
-        "EMPLOYEE": "INDIVIDUAL",
-        "OPERATOR": "INDIVIDUAL",
-        "TECHNICIAN": "INDIVIDUAL",
-    }
-
-    # Map OKR level to approval roles at each stage
+    # OKR creation levels: server.roles.can_create_objective_at_level (ROLE_TO_ALLOWED_OBJECTIVE_LEVELS).
+    # SUPER_ADMIN removed from default approver routing (Phase 6 manual override).
     APPROVAL_ROLES_BY_LEVEL = {
-        "ORGANIZATION": ["CEO", "SUPER_ADMIN"],
-        "PLANT": ["PLANT_HEAD", "VP_OPERATIONS", "VP_MANUFACTURING", "SUPER_ADMIN"],
-        "DEPARTMENT": ["DEPT_HEAD", "PLANT_HEAD", "VP_OPERATIONS", "SUPER_ADMIN"],
-        "TEAM": ["MANAGER", "DEPT_HEAD", "PLANT_HEAD", "SUPER_ADMIN"],
-        "INDIVIDUAL": ["MANAGER", "TEAM_LEAD", "DEPT_HEAD", "PLANT_HEAD", "SUPER_ADMIN"],
+        "ORGANIZATION": ["CEO"],
+        "PLANT": ["PLANT_HEAD", "VP_OPERATIONS", "VP_MANUFACTURING"],
+        "DEPARTMENT": ["DEPT_HEAD", "PLANT_HEAD", "VP_OPERATIONS"],
+        "TEAM": ["MANAGER", "DEPT_HEAD", "PLANT_HEAD"],
+        "INDIVIDUAL": ["MANAGER", "TEAM_LEAD", "DEPT_HEAD", "PLANT_HEAD"],
     }
 
     # ────────────────────────────────────────────────────────────────────────────
@@ -117,12 +89,12 @@ class OKRHierarchyWorkflow:
         Check if user can create an OKR at the specified level.
         Returns: (can_create: bool, reason: str)
         """
-        system_role = user.system_role
-        allowed_levels = self.ROLE_CREATION_LEVELS.get(system_role, [])
-
-        if okr_level.upper() not in allowed_levels:
+        role = normalize_role(user.system_role)
+        okr_u = okr_level.upper()
+        if not can_create_objective_at_level(role, okr_u):
+            allowed_levels = allowed_objective_levels_for(role)
             return False, (
-                f"Role '{system_role}' cannot create {okr_level} OKRs. "
+                f"Role '{user.system_role}' cannot create {okr_level} OKRs. "
                 f"Allowed levels: {', '.join(allowed_levels) or 'None (read-only role)'}"
             )
 
@@ -296,6 +268,11 @@ class OKRHierarchyWorkflow:
                     f"cannot own ORGANIZATION OKRs"
                 )
         elif okr_level == "PLANT":
+            # NOTE: REGION scope intentionally not handled here. A REGIONAL_HEAD
+            # creating a PLANT-level OKR cannot, in Phase 3, assign that OKR to a
+            # plant employee whose plant sits under their region. This is a known
+            # limitation tracked for Phase 4 (matrix reporting), where the path-based
+            # scope check will replace the per-level allow-list.
             if assignee_perm.scope_type not in ["ORGANIZATION", "PLANT"]:
                 return False, (
                     f"Assignee with scope '{assignee_perm.scope_type}' "
@@ -431,12 +408,12 @@ class OKRHierarchyWorkflow:
         """
         Check if user can approve an OKR.
         
-        Approval authority:
-        - ORGANIZATION OKRs: approved by CEO/SUPER_ADMIN
-        - PLANT OKRs: approved by Plant Head/VP/SUPER_ADMIN
-        - DEPARTMENT OKRs: approved by Department Head/Plant Head/VP/SUPER_ADMIN
-        - TEAM OKRs: approved by Manager/Department Head/Plant Head/SUPER_ADMIN
-        - INDIVIDUAL OKRs: approved by Mgr/Team Lead/Department Head/Plant Head/SUPER_ADMIN
+        Approval authority (default chain; SUPER_ADMIN uses Phase-6 override, not listed):
+        - ORGANIZATION OKRs: CEO
+        - PLANT OKRs: Plant Head / VP
+        - DEPARTMENT OKRs: Department Head / Plant Head / VP
+        - TEAM OKRs: Manager / Department Head / Plant Head
+        - INDIVIDUAL OKRs: Manager / Team Lead / Department Head / Plant Head
         """
         okr_level = okr.level.upper()
         approver_role = approver.system_role

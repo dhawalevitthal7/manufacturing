@@ -105,7 +105,7 @@
   - DELETE /api/org-tree/{node_id} (soft-delete, SUPER_ADMIN only)
 - ✅ Authorization:
   - GET endpoints scoped by UserPermissionProfile
-  - Mutations (POST/PATCH/DELETE) require SUPER_ADMIN via require_super_admin_from_query()
+  - Mutations (POST/PATCH/DELETE) require SUPER_ADMIN via Bearer JWT (`require_super_admin` → `get_jwt_payload`); Phase 2 replaced query-param auth for these routes.
 - ✅ routes_org.py modified:
   - POST /plants: Creates OrgNode as child of org root
   - POST /departments: Creates OrgNode as child of plant

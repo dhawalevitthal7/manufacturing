@@ -26,6 +26,15 @@ class PlantCreate(BaseModel):
     name: str
     location: Optional[str] = None
     code: Optional[str] = None
+    region_id: Optional[str] = None
+
+
+class OrgTreeNamedNodeCreate(BaseModel):
+    """Body for POST /api/org-tree/regions and POST /api/org-tree/corporate-functions."""
+
+    name: str
+    code: Optional[str] = None
+    head_user_id: Optional[str] = None
 
 class DepartmentCreate(BaseModel):
     plant_id: str
@@ -38,6 +47,15 @@ class TeamCreate(BaseModel):
     lead_id: Optional[str] = None
     # Roster on create; users must belong to the team's plant (plant_id or dept in that plant).
     member_user_ids: Optional[List[str]] = None
+
+
+class TeamUpdate(BaseModel):
+    """Body for PUT /api/teams/{team_id} (SUPER_ADMIN)."""
+
+    name: Optional[str] = None
+    department_id: Optional[str] = None
+    lead_id: Optional[str] = None
+
 
 class ShiftCreate(BaseModel):
     plant_id: str
@@ -187,6 +205,7 @@ class UserPermissionProfile(BaseModel):
     scoped_plant_id: Optional[str] = None
     scoped_department_id: Optional[str] = None
     scoped_team_id: Optional[str] = None
+    scoped_region_id: Optional[str] = None
     can_view_all_plants: bool
     can_view_all_departments: bool
     can_view_all_teams: bool

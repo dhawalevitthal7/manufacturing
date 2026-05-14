@@ -4,6 +4,8 @@ Organization Tree Routes
 
 Endpoints for managing the unified OrgNode hierarchy:
 - GET /api/org-tree — fetch scoped org tree for current user
+- POST /api/org-tree/regions — create REGION under org root (SUPER_ADMIN, Bearer)
+- POST /api/org-tree/corporate-functions — create CORPORATE_FUNCTION under org root (SUPER_ADMIN, Bearer)
 - GET /api/org-tree/{node_id} — fetch single node with children
 - POST /api/org-tree — create a new node (SUPER_ADMIN only)
 - PATCH /api/org-tree/{node_id} — update node (SUPER_ADMIN only)
@@ -14,29 +16,15 @@ from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
 from server.database import get_db
-from server.models import OrgNode, User, UserPermissionProfile
-from server.schemas import OrgNodeCreate, OrgNodeUpdate, OrgNodeResponse
+from server.models import OrgNode, User, UserPermissionProfile, Organization, NodeType
+from server.schemas import OrgNodeCreate, OrgNodeUpdate, OrgNodeResponse, OrgTreeNamedNodeCreate
 from server.auth import require_super_admin
+from server.services.org_node_validation import validate_parent_child
 from server.services.org_tree_service import (
     get_descendants, get_ancestors, create_child_node, build_tree_response
 )
 
 router = APIRouter(prefix="/api/org-tree", tags=["org-tree"])
-
-
-def get_auth_payload(user_id: str = Query(""), role: str = Query("")) -> dict:
-    """Extract auth payload from query parameters injected by middleware."""
-    if not user_id:
-        raise HTTPException(401, "No user_id in auth context")
-    return {"user_id": user_id, "role": role}
-
-
-def require_super_admin_from_query(auth_payload: dict = Depends(get_auth_payload)) -> dict:
-    """Require SUPER_ADMIN role from query-injected auth payload."""
-    role = auth_payload.get("role")
-    if role != "SUPER_ADMIN":
-        raise HTTPException(403, "SUPER_ADMIN role required for this operation")
-    return auth_payload
 
 
 def get_current_user_from_db(db: Session, user_payload: dict) -> User:
@@ -69,7 +57,7 @@ def _node_visible_for_scope(N: OrgNode, scope_node_id: str, P_X: str) -> bool:
 
 
 def get_user_scope(user: User, db: Session) -> tuple:
-    """Returns (scope_type, scope_node_id). scope_node_id is OrgNode id (= legacy id for plant/dept/team)."""
+    """Returns (scope_type, scope_node_id). scope_node_id is OrgNode id (plant, dept, team, or region)."""
     perm = db.query(UserPermissionProfile).filter(
         UserPermissionProfile.user_id == user.id
     ).first()
@@ -93,6 +81,15 @@ def get_user_scope(user: User, db: Session) -> tuple:
             sid = perm.scoped_team_id or user.team_id
             if sid:
                 return ("TEAM", sid)
+        elif scope_type == "REGION":
+            sid = perm.scoped_region_id
+            if not sid and user.org_node_id:
+                anchor = db.query(OrgNode).filter(OrgNode.id == user.org_node_id).first()
+                if anchor and str(anchor.node_type) == "REGION":
+                    sid = anchor.id
+            if sid:
+                return ("REGION", sid)
+            return ("REGION", None)
 
     if user.org_node_id:
         return ("INDIVIDUAL", user.org_node_id)
@@ -107,6 +104,8 @@ def filter_tree_by_scope(
     db: Session,
 ) -> list:
     """SUPER_ADMIN / org-wide: all nodes. Else filter by (a)(b)(c) vs scope path P_X."""
+    if scope_type == "REGION" and scope_node_id is None:
+        return []
     if scope_type == "ORGANIZATION" or scope_node_id is None:
         return nodes
 
@@ -115,7 +114,39 @@ def filter_tree_by_scope(
         return []
 
     P_X = scope_node.path
+
+    # REGION: only the region node and its descendants (not org root / sibling branches).
+    if scope_type == "REGION":
+        prefix = P_X + "."
+        return [N for N in nodes if N.id == scope_node_id or (N.path and N.path.startswith(prefix))]
+
     return [N for N in nodes if _node_visible_for_scope(N, scope_node_id, P_X)]
+
+
+def _org_node_response_dict(node: OrgNode) -> dict:
+    """Same JSON shape as POST /api/org-tree create response."""
+    return {
+        "id": node.id,
+        "org_id": node.org_id,
+        "parent_id": node.parent_id,
+        "node_type": node.node_type,
+        "name": node.name,
+        "code": node.code,
+        "head_user_id": node.head_user_id,
+        "path": node.path,
+        "depth": node.depth,
+        "node_metadata": node.node_metadata or {},
+        "is_active": node.is_active,
+        "created_at": node.created_at.isoformat(),
+        "updated_at": node.updated_at.isoformat(),
+    }
+
+
+def _get_org_root_node(db: Session, org_id: str) -> OrgNode:
+    root = db.query(OrgNode).filter(OrgNode.id == org_id, OrgNode.org_id == org_id).first()
+    if not root:
+        raise HTTPException(404, "Organization root node not found")
+    return root
 
 
 @router.get("")
@@ -158,6 +189,84 @@ def get_org_tree(
     return tree
 
 
+@router.post("/regions")
+def create_region(
+    req: OrgTreeNamedNodeCreate,
+    db: Session = Depends(get_db),
+    org_id: str = Query(""),
+    _auth: dict = Depends(require_super_admin),
+):
+    """Create a REGION node under the organization root (SUPER_ADMIN, Bearer JWT)."""
+    org = db.query(Organization).filter(Organization.id == org_id).first()
+    if not org:
+        raise HTTPException(404, "Organization not found")
+
+    org_root = _get_org_root_node(db, org_id)
+    validate_parent_child(NodeType.REGION, org_root)
+
+    try:
+        node = create_child_node(
+            parent_id=org_root.id,
+            node_type="REGION",
+            name=req.name,
+            org_id=org_id,
+            code=req.code,
+            head_user_id=req.head_user_id,
+            node_metadata={},
+            db=db,
+        )
+        db.add(node)
+        db.commit()
+        db.refresh(node)
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(400, f"Failed to create region: {str(e)}")
+
+    return _org_node_response_dict(node)
+
+
+@router.post("/corporate-functions")
+def create_corporate_function(
+    req: OrgTreeNamedNodeCreate,
+    db: Session = Depends(get_db),
+    org_id: str = Query(""),
+    _auth: dict = Depends(require_super_admin),
+):
+    """Create a CORPORATE_FUNCTION node under the organization root (SUPER_ADMIN, Bearer JWT)."""
+    org = db.query(Organization).filter(Organization.id == org_id).first()
+    if not org:
+        raise HTTPException(404, "Organization not found")
+
+    org_root = _get_org_root_node(db, org_id)
+    validate_parent_child(NodeType.CORPORATE_FUNCTION, org_root)
+
+    try:
+        node = create_child_node(
+            parent_id=org_root.id,
+            node_type="CORPORATE_FUNCTION",
+            name=req.name,
+            org_id=org_id,
+            code=req.code,
+            head_user_id=req.head_user_id,
+            node_metadata={},
+            db=db,
+        )
+        db.add(node)
+        db.commit()
+        db.refresh(node)
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(400, f"Failed to create corporate function: {str(e)}")
+
+    return _org_node_response_dict(node)
+
+
 @router.get("/{node_id}")
 def get_org_node(
     node_id: str,
@@ -182,6 +291,8 @@ def get_org_node(
     
     # Check permission
     scope_type, scope_node_id = get_user_scope(user, db)
+    if scope_type == "REGION" and not scope_node_id:
+        raise HTTPException(403, "User does not have permission to view this node")
     if scope_type != "ORGANIZATION" and scope_node_id:
         scope_anchor = db.query(OrgNode).filter(OrgNode.id == scope_node_id).first()
         if scope_anchor:
@@ -230,7 +341,7 @@ def create_org_node(
     req: OrgNodeCreate,
     db: Session = Depends(get_db),
     org_id: str = Query(""),
-    auth_payload: dict = Depends(require_super_admin_from_query),
+    _auth: dict = Depends(require_super_admin),
 ):
     """
     Create a new org node (SUPER_ADMIN only).
@@ -239,7 +350,6 @@ def create_org_node(
     If parent_id is specified, creates as child of that node.
     """
     # Verify org exists
-    from server.models import Organization
     org = db.query(Organization).filter(Organization.id == org_id).first()
     if not org:
         raise HTTPException(404, "Organization not found")
@@ -268,25 +378,14 @@ def create_org_node(
         db.add(node)
         db.commit()
         db.refresh(node)
+    except HTTPException:
+        db.rollback()
+        raise
     except Exception as e:
         db.rollback()
         raise HTTPException(400, f"Failed to create node: {str(e)}")
     
-    return {
-        "id": node.id,
-        "org_id": node.org_id,
-        "parent_id": node.parent_id,
-        "node_type": node.node_type,
-        "name": node.name,
-        "code": node.code,
-        "head_user_id": node.head_user_id,
-        "path": node.path,
-        "depth": node.depth,
-        "node_metadata": node.node_metadata or {},
-        "is_active": node.is_active,
-        "created_at": node.created_at.isoformat(),
-        "updated_at": node.updated_at.isoformat(),
-    }
+    return _org_node_response_dict(node)
 
 
 @router.patch("/{node_id}")
@@ -295,7 +394,7 @@ def update_org_node(
     req: OrgNodeUpdate,
     db: Session = Depends(get_db),
     org_id: str = Query(""),
-    auth_payload: dict = Depends(require_super_admin_from_query),
+    _auth: dict = Depends(require_super_admin),
 ):
     """
     Update an existing org node (SUPER_ADMIN only).
@@ -338,6 +437,9 @@ def update_org_node(
         try:
             from server.services.org_tree_service import move_node
             move_node(node_id, req.parent_id, db)
+        except HTTPException:
+            db.rollback()
+            raise
         except Exception as e:
             db.rollback()
             raise HTTPException(400, f"Failed to move node: {str(e)}")
@@ -367,7 +469,7 @@ def delete_org_node(
     node_id: str,
     db: Session = Depends(get_db),
     org_id: str = Query(""),
-    auth_payload: dict = Depends(require_super_admin_from_query),
+    _auth: dict = Depends(require_super_admin),
 ):
     """
     Soft-delete an org node (SUPER_ADMIN only).

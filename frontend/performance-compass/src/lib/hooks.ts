@@ -24,6 +24,8 @@ import {
   type SystemRole,
   type ObjectiveLevel,
   type ReviewStatus,
+  type OrgTreeNamedNodeCreate,
+  type OrgNodeUpdateRequest,
 } from "./api";
 
 // ============================================================================
@@ -65,6 +67,7 @@ export function useCreatePlant() {
     mutationFn: api.createPlant.bind(api),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["plants"] });
+      queryClient.invalidateQueries({ queryKey: ["org-tree"] });
     },
   });
 }
@@ -194,6 +197,69 @@ export function useOrgChart() {
   return useQuery({
     queryKey: ["org-chart"],
     queryFn: () => api.getOrgChart(),
+  });
+}
+
+// ============================================================================
+// ORG TREE (OrgNode)
+// ============================================================================
+
+export function useOrgTree(enabled = true) {
+  return useQuery({
+    queryKey: ["org-tree"],
+    queryFn: () => api.fetchOrgTree(),
+    enabled,
+  });
+}
+
+export function useOrgNodeDetail(nodeId: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ["org-node", nodeId],
+    queryFn: () => api.fetchOrgNode(nodeId!),
+    enabled: !!nodeId && enabled,
+  });
+}
+
+export function useCreateRegion() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: OrgTreeNamedNodeCreate) => api.createRegion(body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["org-tree"] });
+    },
+  });
+}
+
+export function useCreateCorporateFunction() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: OrgTreeNamedNodeCreate) => api.createCorporateFunction(body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["org-tree"] });
+    },
+  });
+}
+
+export function useUpdateOrgNode() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: OrgNodeUpdateRequest }) =>
+      api.updateOrgNode(id, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["org-tree"] });
+      queryClient.invalidateQueries({ queryKey: ["org-node"] });
+    },
+  });
+}
+
+export function useDeleteOrgNode() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.deleteOrgNode(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["org-tree"] });
+      queryClient.invalidateQueries({ queryKey: ["org-node"] });
+    },
   });
 }
 

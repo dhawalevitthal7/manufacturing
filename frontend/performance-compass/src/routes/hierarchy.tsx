@@ -1,12 +1,20 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { PagePlaceholder } from "@/components/layout/page-placeholder";
+import { HierarchyPage } from "@/components/hierarchy/hierarchy-page";
 
 export const Route = createFileRoute("/hierarchy")({
   head: () => ({
     meta: [
-      { title: "Organizational Hierarchy — Axis Operate" },
-      { name: "description", content: "Visualize the reporting structure." },
+      { title: "Regions & Corporate Functions — Axis Operate" },
+      {
+        name: "description",
+        content:
+          "Manage regions and corporate functions for your organization tree: create, edit, and remove top-level org nodes.",
+      },
     ],
   }),
-  component: () => <PagePlaceholder title="Organizational Hierarchy" description="Visualize the reporting structure." />,
+  component: HierarchyRoute,
 });
+
+function HierarchyRoute() {
+  return <HierarchyPage />;
+}

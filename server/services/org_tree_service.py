@@ -16,6 +16,7 @@ import uuid
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 from server.models import OrgNode, User, Plant, Department, Team, Organization
+from server.services.org_node_validation import validate_parent_child
 
 
 def org_node_depth_from_path(path: str) -> int:
@@ -126,8 +127,7 @@ def create_child_node(
         node_metadata = {}
 
     if parent_id is None:
-        if node_type != "ORGANIZATION":
-            raise ValueError("Only ORGANIZATION may have parent_id=None")
+        validate_parent_child(node_type, None)
         if not node_id:
             raise ValueError("ORGANIZATION root requires node_id (= organizations.id)")
         path = node_id
@@ -137,6 +137,7 @@ def create_child_node(
         parent = db.query(OrgNode).filter(OrgNode.id == parent_id).first()
         if not parent:
             raise ValueError(f"Parent node {parent_id} not found")
+        validate_parent_child(node_type, parent)
         child_id = node_id if node_id else _new_non_legacy_node_id()
         path = f"{parent.path}.{child_id}"
         depth = org_node_depth_from_path(path)
@@ -167,12 +168,15 @@ def move_node(node_id: str, new_parent_id: Optional[str], db: Session) -> None:
         raise ValueError(f"Node {node_id} not found")
 
     if new_parent_id is None:
+        new_parent = None
         new_path = node.org_id
     else:
         new_parent = db.query(OrgNode).filter(OrgNode.id == new_parent_id).first()
         if not new_parent:
             raise ValueError(f"New parent {new_parent_id} not found")
         new_path = f"{new_parent.path}.{node.id}"
+
+    validate_parent_child(node.node_type, new_parent)
 
     new_depth = org_node_depth_from_path(new_path)
     old_path = node.path
@@ -217,7 +221,7 @@ def sync_org_node_for(
         raise ValueError(f"Unknown entity_type: {entity_type}")
 
     if entity_type == "PLANT" and not parent_id:
-        raise ValueError("PLANT sync requires parent_id = organization root id (organizations.id)")
+        raise ValueError("PLANT sync requires parent_id (organization root or region node id)")
 
     existing = db.query(OrgNode).filter(OrgNode.id == entity_id).first()
 
@@ -227,8 +231,11 @@ def sync_org_node_for(
         existing.code = code if code is not None else existing.code
         if head_user_id is not None:
             existing.head_user_id = head_user_id
-        parent = db.query(OrgNode).filter(OrgNode.id == parent_id).first() if parent_id else None
-        if parent_id and parent:
+        if parent_id:
+            parent = db.query(OrgNode).filter(OrgNode.id == parent_id).first()
+            if not parent:
+                raise ValueError(f"Parent node {parent_id} not found")
+            validate_parent_child(existing.node_type, parent)
             existing.path = f"{parent.path}.{entity_id}"
             existing.depth = org_node_depth_from_path(existing.path)
         db.flush()
@@ -287,9 +294,18 @@ def build_tree_response(nodes: List[OrgNode], node_map: dict = None) -> dict:
             children_by_parent[parent_id] = []
         children_by_parent[parent_id].append(node)
     
-    # Find root nodes (parent_id = None)
-    roots = children_by_parent.get(None, [])
-    
+    # Roots: DB roots (parent_id is None) plus any node whose parent is outside the visible set
+    # (e.g. REGION subtree scoped without the org root row — still render as top-level).
+    node_ids = set(node_map.keys())
+    roots = [n for n in nodes if n.parent_id is None or n.parent_id not in node_ids]
+    seen: set[str] = set()
+    deduped: List[OrgNode] = []
+    for n in sorted(roots, key=lambda x: (x.path or "", x.name or "")):
+        if n.id not in seen:
+            seen.add(n.id)
+            deduped.append(n)
+    roots = deduped
+
     def node_to_dict(node):
         """Recursively convert node to dict with children."""
         children = children_by_parent.get(node.id, [])

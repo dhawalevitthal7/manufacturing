@@ -17,6 +17,7 @@ from server.models import (
     Plant, Department, Team, TeamMember, ReportingRelationship,
 )
 from server.okr_hierarchy_workflow import OKRHierarchyWorkflow
+from server.roles import allowed_objective_levels_for, normalize_role
 from server.schemas import ObjectiveCreate, KeyResultCreate, ProgressUpdateCreate
 
 router = APIRouter(prefix="/api/okrs/hierarchy", tags=["okrs-hierarchy"])
@@ -44,7 +45,7 @@ def validate_can_create(
     workflow = OKRHierarchyWorkflow(db)
     can_create, reason = workflow.can_create_okr_at_level(user, okr_level, org_id)
 
-    allowed_levels = workflow.ROLE_CREATION_LEVELS.get(user.system_role, [])
+    allowed_levels = allowed_objective_levels_for(normalize_role(user.system_role))
 
     return {
         "can_create": can_create,

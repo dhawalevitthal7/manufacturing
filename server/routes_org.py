@@ -5,6 +5,13 @@ from server.models import Organization, Plant, Department, Shift, Designation, T
 from server.team_membership_service import enroll_team_member
 from server.schemas import PlantCreate, DepartmentCreate, ShiftCreate, DesignationCreate, TeamCreate
 from server.services.org_tree_service import sync_org_node_for
+from server.services.org_node_validation import validate_plant_region_parent_node
+from server.auth import require_super_admin
+from server.services.audit_service import (
+    audit_super_admin_action,
+    STRUCTURE_CREATE,
+    STRUCTURE_UPDATE,
+)
 
 router = APIRouter(prefix="/api/org", tags=["organization"])
 
@@ -60,50 +67,119 @@ def get_org(db: Session = Depends(get_db), org_id: str = ""):
 
 
 @router.put("")
-def update_org(name: str = None, domain: str = None, db: Session = Depends(get_db), org_id: str = ""):
+def update_org(
+    name: str = None,
+    domain: str = None,
+    db: Session = Depends(get_db),
+    org_id: str = "",
+    _auth: dict = Depends(require_super_admin),
+    user_id: str = "",
+):
     org = db.query(Organization).filter(Organization.id == org_id).first()
     if not org:
         raise HTTPException(404)
-    if name: org.name = name
-    if domain: org.domain = domain
+    if name:
+        org.name = name
+    if domain:
+        org.domain = domain
     db.commit()
+    audit_super_admin_action(
+        org_id=org_id,
+        actor_user_id=str(_auth.get("sub") or user_id),
+        action=STRUCTURE_UPDATE,
+        entity_type="ORGANIZATION",
+        entity_id=org.id,
+        details={"name": name, "domain": domain},
+    )
     return {"status": "updated"}
 
 
 @router.post("/complete-setup")
-def complete_setup(db: Session = Depends(get_db), org_id: str = ""):
+def complete_setup(
+    db: Session = Depends(get_db),
+    org_id: str = "",
+    _auth: dict = Depends(require_super_admin),
+    user_id: str = "",
+):
     org = db.query(Organization).filter(Organization.id == org_id).first()
     if not org:
         raise HTTPException(404)
     org.setup_completed = True
     db.commit()
+    audit_super_admin_action(
+        org_id=org_id,
+        actor_user_id=str(_auth.get("sub") or user_id),
+        action=STRUCTURE_UPDATE,
+        entity_type="ORGANIZATION",
+        entity_id=org.id,
+        details={"setup_completed": True},
+    )
     return {"status": "ok", "setup_completed": True}
 
 
 # ===== PLANTS =====
 @router.post("/plants")
-def create_plant(req: PlantCreate, db: Session = Depends(get_db), org_id: str = ""):
+def create_plant(
+    req: PlantCreate,
+    db: Session = Depends(get_db),
+    org_id: str = "",
+    _auth: dict = Depends(require_super_admin),
+    user_id: str = "",
+):
     plant = Plant(org_id=org_id, name=req.name, location=req.location, code=req.code)
     db.add(plant)
     db.flush()
-    
-    # Sync OrgNode: PLANT shares id with plants.id; parent is ORGANIZATION root (= org_id)
+
+    plant_parent_id = org_id
+    if req.region_id:
+        region_node = (
+            db.query(OrgNode)
+            .filter(
+                OrgNode.id == req.region_id,
+                OrgNode.org_id == org_id,
+                OrgNode.is_active == True,
+            )
+            .first()
+        )
+        if not region_node:
+            db.rollback()
+            raise HTTPException(400, "Region not found in this organization")
+        validate_plant_region_parent_node(region_node)
+        plant_parent_id = req.region_id
+
+    # Sync OrgNode: PLANT shares id with plants.id; parent is org root or REGION
     try:
         sync_org_node_for(
             entity_type="PLANT",
             entity_id=plant.id,
             org_id=org_id,
             name=req.name,
-            parent_id=org_id,
+            parent_id=plant_parent_id,
             code=req.code,
             db=db,
         )
+    except HTTPException:
+        db.rollback()
+        raise
     except Exception as e:
         db.rollback()
         raise HTTPException(500, f"Failed to create org node: {str(e)}")
     
     db.commit()
     db.refresh(plant)
+    audit_super_admin_action(
+        org_id=org_id,
+        actor_user_id=str(_auth.get("sub") or user_id),
+        action=STRUCTURE_CREATE,
+        entity_type="PLANT",
+        entity_id=plant.id,
+        details={
+            "name": plant.name,
+            "code": plant.code,
+            "location": plant.location,
+            "region_id": req.region_id,
+        },
+    )
     return {"id": plant.id, "name": plant.name, "location": plant.location, "code": plant.code}
 
 
@@ -125,10 +201,20 @@ def list_plants(db: Session = Depends(get_db), org_id: str = ""):
 
 
 @router.put("/plants/{plant_id}")
-def update_plant(plant_id: str, req: PlantCreate, db: Session = Depends(get_db)):
+def update_plant(
+    plant_id: str,
+    req: PlantCreate,
+    db: Session = Depends(get_db),
+    org_id: str = "",
+    _auth: dict = Depends(require_super_admin),
+    user_id: str = "",
+):
     p = db.query(Plant).filter(Plant.id == plant_id).first()
-    if not p: raise HTTPException(404)
-    
+    if not p:
+        raise HTTPException(404)
+    if p.org_id != org_id:
+        raise HTTPException(404, "Not found")
+
     old_name = p.name
     p.name = req.name
     if req.location: p.location = req.location
@@ -145,12 +231,26 @@ def update_plant(plant_id: str, req: PlantCreate, db: Session = Depends(get_db))
             org_node.name = req.name
     
     db.commit()
+    audit_super_admin_action(
+        org_id=org_id,
+        actor_user_id=str(_auth.get("sub") or user_id),
+        action=STRUCTURE_UPDATE,
+        entity_type="PLANT",
+        entity_id=plant_id,
+        details={"old_name": old_name, "new_name": req.name, "code": req.code, "location": req.location},
+    )
     return {"status": "updated"}
 
 
 # ===== DEPARTMENTS =====
 @router.post("/departments")
-def create_department(req: DepartmentCreate, db: Session = Depends(get_db), org_id: str = ""):
+def create_department(
+    req: DepartmentCreate,
+    db: Session = Depends(get_db),
+    org_id: str = "",
+    _auth: dict = Depends(require_super_admin),
+    user_id: str = "",
+):
     dept = Department(org_id=org_id, plant_id=req.plant_id, name=req.name, dept_type=req.dept_type)
     db.add(dept)
     db.flush()
@@ -180,12 +280,23 @@ def create_department(req: DepartmentCreate, db: Session = Depends(get_db), org_
             code=None,
             db=db,
         )
+    except HTTPException:
+        db.rollback()
+        raise
     except Exception as e:
         db.rollback()
         raise HTTPException(500, f"Failed to create org node: {str(e)}")
 
     db.commit()
     db.refresh(dept)
+    audit_super_admin_action(
+        org_id=org_id,
+        actor_user_id=str(_auth.get("sub") or user_id),
+        action=STRUCTURE_CREATE,
+        entity_type="DEPARTMENT",
+        entity_id=dept.id,
+        details={"name": dept.name, "dept_type": dept.dept_type, "plant_id": req.plant_id},
+    )
     return {"id": dept.id, "name": dept.name, "dept_type": dept.dept_type}
 
 
@@ -199,7 +310,13 @@ def list_departments(db: Session = Depends(get_db), org_id: str = "", plant_id: 
 
 
 @router.post("/departments/seed-defaults")
-def seed_default_departments(plant_id: str, db: Session = Depends(get_db), org_id: str = ""):
+def seed_default_departments(
+    plant_id: str,
+    db: Session = Depends(get_db),
+    org_id: str = "",
+    _auth: dict = Depends(require_super_admin),
+    user_id: str = "",
+):
     created = []
     for d in DEFAULT_DEPARTMENTS:
         existing = db.query(Department).filter(Department.plant_id == plant_id, Department.name == d["name"]).first()
@@ -208,12 +325,26 @@ def seed_default_departments(plant_id: str, db: Session = Depends(get_db), org_i
             db.add(dept)
             created.append(d["name"])
     db.commit()
+    audit_super_admin_action(
+        org_id=org_id,
+        actor_user_id=str(_auth.get("sub") or user_id),
+        action=STRUCTURE_CREATE,
+        entity_type="DEPARTMENT_SEED",
+        entity_id=plant_id,
+        details={"plant_id": plant_id, "created_names": created},
+    )
     return {"created": created}
 
 
 # ===== TEAMS =====
 @router.post("/teams")
-def create_team(req: TeamCreate, db: Session = Depends(get_db), org_id: str = ""):
+def create_team(
+    req: TeamCreate,
+    db: Session = Depends(get_db),
+    org_id: str = "",
+    _auth: dict = Depends(require_super_admin),
+    user_id: str = "",
+):
     dept = db.query(Department).filter(
         Department.id == req.department_id,
         Department.org_id == org_id,
@@ -248,6 +379,9 @@ def create_team(req: TeamCreate, db: Session = Depends(get_db), org_id: str = ""
             head_user_id=req.lead_id,
             db=db,
         )
+    except HTTPException:
+        db.rollback()
+        raise
     except Exception as e:
         db.rollback()
         raise HTTPException(500, f"Failed to create org node: {str(e)}")
@@ -283,6 +417,19 @@ def create_team(req: TeamCreate, db: Session = Depends(get_db), org_id: str = ""
 
     db.commit()
     db.refresh(team)
+    audit_super_admin_action(
+        org_id=org_id,
+        actor_user_id=str(_auth.get("sub") or user_id),
+        action=STRUCTURE_CREATE,
+        entity_type="TEAM",
+        entity_id=team.id,
+        details={
+            "name": team.name,
+            "department_id": team.department_id,
+            "lead_id": team.lead_id,
+            "member_count": len(ordered),
+        },
+    )
     return {"id": team.id, "name": team.name, "department_id": team.department_id, "lead_id": team.lead_id}
 
 
@@ -311,12 +458,31 @@ def list_teams(db: Session = Depends(get_db), org_id: str = "", department_id: s
 
 # ===== SHIFTS =====
 @router.post("/shifts")
-def create_shift(req: ShiftCreate, db: Session = Depends(get_db), org_id: str = ""):
+def create_shift(
+    req: ShiftCreate,
+    db: Session = Depends(get_db),
+    org_id: str = "",
+    _auth: dict = Depends(require_super_admin),
+    user_id: str = "",
+):
     shift = Shift(org_id=org_id, plant_id=req.plant_id, name=req.name,
                   start_time=req.start_time, end_time=req.end_time, supervisor_id=req.supervisor_id)
     db.add(shift)
     db.commit()
     db.refresh(shift)
+    audit_super_admin_action(
+        org_id=org_id,
+        actor_user_id=str(_auth.get("sub") or user_id),
+        action=STRUCTURE_CREATE,
+        entity_type="SHIFT",
+        entity_id=shift.id,
+        details={
+            "name": shift.name,
+            "plant_id": req.plant_id,
+            "start_time": str(req.start_time),
+            "end_time": str(req.end_time),
+        },
+    )
     return {"id": shift.id, "name": shift.name}
 
 
@@ -338,16 +504,35 @@ def list_designations(db: Session = Depends(get_db), org_id: str = ""):
 
 
 @router.post("/designations")
-def create_designation(req: DesignationCreate, db: Session = Depends(get_db), org_id: str = ""):
+def create_designation(
+    req: DesignationCreate,
+    db: Session = Depends(get_db),
+    org_id: str = "",
+    _auth: dict = Depends(require_super_admin),
+    user_id: str = "",
+):
     d = Designation(org_id=org_id, name=req.name, level=req.level, category=req.category)
     db.add(d)
     db.commit()
     db.refresh(d)
+    audit_super_admin_action(
+        org_id=org_id,
+        actor_user_id=str(_auth.get("sub") or user_id),
+        action=STRUCTURE_CREATE,
+        entity_type="DESIGNATION",
+        entity_id=d.id,
+        details={"name": d.name, "level": d.level, "category": d.category},
+    )
     return {"id": d.id, "name": d.name, "level": d.level, "category": d.category}
 
 
 @router.post("/designations/seed-defaults")
-def seed_default_designations(db: Session = Depends(get_db), org_id: str = ""):
+def seed_default_designations(
+    db: Session = Depends(get_db),
+    org_id: str = "",
+    _auth: dict = Depends(require_super_admin),
+    user_id: str = "",
+):
     created = []
     for d in DEFAULT_DESIGNATIONS:
         existing = db.query(Designation).filter(Designation.org_id == org_id, Designation.name == d["name"]).first()
@@ -356,15 +541,42 @@ def seed_default_designations(db: Session = Depends(get_db), org_id: str = ""):
             db.add(des)
             created.append(d["name"])
     db.commit()
+    audit_super_admin_action(
+        org_id=org_id,
+        actor_user_id=str(_auth.get("sub") or user_id),
+        action=STRUCTURE_CREATE,
+        entity_type="DESIGNATION_SEED",
+        entity_id=org_id,
+        details={"created_names": created},
+    )
     return {"created": created}
 
 
 @router.put("/designations/{desig_id}")
-def update_designation(desig_id: str, req: DesignationCreate, db: Session = Depends(get_db)):
+def update_designation(
+    desig_id: str,
+    req: DesignationCreate,
+    db: Session = Depends(get_db),
+    org_id: str = "",
+    _auth: dict = Depends(require_super_admin),
+    user_id: str = "",
+):
     d = db.query(Designation).filter(Designation.id == desig_id).first()
-    if not d: raise HTTPException(404)
+    if not d:
+        raise HTTPException(404)
+    if d.org_id != org_id:
+        raise HTTPException(404, "Not found")
     d.name = req.name
     d.level = req.level
-    if req.category: d.category = req.category
+    if req.category:
+        d.category = req.category
     db.commit()
+    audit_super_admin_action(
+        org_id=org_id,
+        actor_user_id=str(_auth.get("sub") or user_id),
+        action=STRUCTURE_UPDATE,
+        entity_type="DESIGNATION",
+        entity_id=desig_id,
+        details={"name": req.name, "level": req.level, "category": req.category},
+    )
     return {"status": "updated"}

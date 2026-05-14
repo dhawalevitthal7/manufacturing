@@ -1,8 +1,18 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/lib/stores/auth-store";
-import { usePlants, useDepartments, useTeams, useDesignations, useCreatePlant, useCreateDepartment, useCreateTeam } from "@/lib/hooks";
-import { api } from "@/lib/api";
+import {
+  usePlants,
+  useDepartments,
+  useTeams,
+  useDesignations,
+  useCreatePlant,
+  useCreateDepartment,
+  useCreateTeam,
+  useOrgTree,
+} from "@/lib/hooks";
+import { api, type PlantCreate } from "@/lib/api";
+import { flattenOrgNodes } from "@/lib/org-tree-utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -36,6 +46,15 @@ import {
 
 export function AdminPanel() {
   const { hasCapability, permissions, user, getToken } = useAuthStore();
+  const isSuperAdmin = permissions?.system_role === "SUPER_ADMIN";
+  const { data: orgTree } = useOrgTree(!!isSuperAdmin);
+
+  const regionNodes = useMemo(() => {
+    if (!orgTree) return [];
+    return flattenOrgNodes(orgTree)
+      .filter((n) => n.node_type === "REGION")
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [orgTree]);
 
   const [selectedPlantForDept, setSelectedPlantForDept] = useState("");
   const [selectedPlantForTeam, setSelectedPlantForTeam] = useState("");
@@ -72,6 +91,8 @@ export function AdminPanel() {
   // Create forms
   const [plantName, setPlantName] = useState("");
   const [plantLocation, setPlantLocation] = useState("");
+  /** Optional region for new plant; only used when regionNodes.length > 0. */
+  const [plantRegionId, setPlantRegionId] = useState("");
   const [deptName, setDeptName] = useState("");
   const [deptType, setDeptType] = useState("");
   const [teamName, setTeamName] = useState("");
@@ -95,7 +116,7 @@ export function AdminPanel() {
     setTeamLeadId("");
   }, [selectedPlantForTeam, selectedDeptForTeam]);
 
-  if (!permissions || permissions.system_role !== "SUPER_ADMIN") {
+  if (!permissions || !isSuperAdmin) {
     return (
       <div className="flex flex-col items-center justify-center rounded-lg border border-destructive/20 bg-destructive/5 p-8 text-center">
         <AlertCircle className="mb-2 h-8 w-8 text-destructive" />
@@ -155,9 +176,18 @@ export function AdminPanel() {
     e.preventDefault();
     clearMessages();
     try {
-      await createPlantMutation.mutateAsync({ name: plantName, location: plantLocation || undefined });
+      const plantPayload: PlantCreate = {
+        name: plantName,
+        location: plantLocation || undefined,
+      };
+      if (plantRegionId) {
+        plantPayload.region_id = plantRegionId;
+      }
+      await createPlantMutation.mutateAsync(plantPayload);
       setSuccessMessage(`Plant "${plantName}" created and saved to database`);
-      setPlantName(""); setPlantLocation("");
+      setPlantName("");
+      setPlantLocation("");
+      setPlantRegionId("");
     } catch (error) {
       setErrorMessage(`Failed to create plant: ${error}`);
     }
@@ -331,6 +361,28 @@ export function AdminPanel() {
                 <Input placeholder="City, State" value={plantLocation}
                   onChange={(e) => setPlantLocation(e.target.value)} className="mt-1" />
               </div>
+              {regionNodes.length > 0 && (
+                <div>
+                  <label className="text-xs font-medium">Region (optional)</label>
+                  <Select
+                    value={plantRegionId || "none"}
+                    onValueChange={(v) => setPlantRegionId(v === "none" ? "" : v)}
+                  >
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="No region" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No region</SelectItem>
+                      {regionNodes.map((r) => (
+                        <SelectItem key={r.id} value={r.id}>
+                          {r.name}
+                          {r.code ? ` (${r.code})` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <Button type="submit" disabled={createPlantMutation.isPending} className="w-full">
                 {createPlantMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Creating...</> : "Create Plant"}
               </Button>

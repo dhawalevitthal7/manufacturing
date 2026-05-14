@@ -1,8 +1,9 @@
 import uuid
 import enum
 from datetime import datetime
-from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, ForeignKey, Text, UniqueConstraint, JSON
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, ForeignKey, Text, UniqueConstraint, JSON, event
+from sqlalchemy.orm import relationship, validates
+from sqlalchemy.orm.attributes import set_committed_value
 from server.database import Base
 
 
@@ -168,6 +169,46 @@ class User(Base):
     org_node_id = Column(String, ForeignKey("org_nodes.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    # NOTE: Canonical system_role uses three complementary hooks — do not remove one
+    # thinking it duplicates another; each covers a different ORM boundary and omitting
+    # any creates a leak (especially expire-on-commit refresh).
+    #   1) @validates — Python setattr / INSERT kwargs (assign path).
+    #   2) load listener — initial hydration from a SELECT row.
+    #   3) refresh listener — deferred column reload after commit (same raw DB string).
+    # SQL filters comparing User.system_role to canonical literals assume stored values
+    # are canonical; @validates guarantees new rows. Raw SQL inserts must normalize first.
+    @validates("system_role")
+    def _validate_system_role(self, key, value):
+        from server.roles import normalize_role
+
+        raw = "" if value is None else str(value).strip()
+        return normalize_role(raw).value
+
+
+def _committed_canonical_system_role(user: User) -> None:
+    """Normalize legacy DB string without marking the instance dirty."""
+    from server.roles import normalize_role
+
+    raw = user.__dict__.get("system_role")
+    if raw is None:
+        return
+    raw_s = str(raw).strip()
+    canon = normalize_role(raw_s).value
+    if raw_s != canon:
+        set_committed_value(user, "system_role", canon)
+
+
+@event.listens_for(User, "load", propagate=True)
+def _normalize_user_system_role_on_load(user: User, context) -> None:
+    """Hydrate path: @validates is not invoked when columns are populated from a SELECT."""
+    _committed_canonical_system_role(user)
+
+
+@event.listens_for(User, "refresh", propagate=True)
+def _normalize_user_system_role_on_refresh(user: User, context, attrs) -> None:
+    """Deferred reload after commit (expire_on_commit) repopulates from DB without re-firing ``load``."""
+    _committed_canonical_system_role(user)
+
 
 # ===== REPORTING RELATIONSHIPS =====
 class ReportingRelationship(Base):
@@ -225,10 +266,11 @@ class UserPermissionProfile(Base):
     system_role = Column(String, nullable=False)  # SUPER_ADMIN, CEO, VP_OPS, PLANT_HEAD, DEPT_HEAD, MANAGER, TEAM_LEAD, SUPERVISOR, EMPLOYEE, HR_HEAD
     designation_id = Column(String, ForeignKey("designations.id"), nullable=True)
     # Hierarchy scope - what they can see/manage
-    scope_type = Column(String, default="NONE")  # ORGANIZATION, PLANT, DEPARTMENT, TEAM, INDIVIDUAL
+    scope_type = Column(String, default="NONE")  # ORGANIZATION, REGION, PLANT, DEPARTMENT, TEAM, INDIVIDUAL
     scoped_plant_id = Column(String, ForeignKey("plants.id"), nullable=True)
     scoped_department_id = Column(String, ForeignKey("departments.id"), nullable=True)
     scoped_team_id = Column(String, ForeignKey("teams.id"), nullable=True)
+    scoped_region_id = Column(String, ForeignKey("org_nodes.id"), nullable=True)
     # Special flags
     can_view_all_plants = Column(Boolean, default=False)
     can_view_all_departments = Column(Boolean, default=False)
@@ -443,7 +485,7 @@ class AuditLog(Base):
     id = Column(String, primary_key=True, default=gen_uuid)
     org_id = Column(String, nullable=False)
     user_id = Column(String, nullable=False)
-    action = Column(String, nullable=False)  # CREATE, UPDATE, DELETE, LOGIN, APPROVE, REJECT
+    action = Column(String, nullable=False)  # CREATE, UPDATE, DELETE, LOGIN, APPROVE, REJECT, ROLE_NORMALIZATION
     entity_type = Column(String)  # USER, OBJECTIVE, KEY_RESULT, REVIEW, etc.
     entity_id = Column(String)
     details = Column(Text)  # JSON string with change details

@@ -4,7 +4,15 @@ from sqlalchemy.orm import Session
 from server.database import get_db
 from server.models import Organization, User
 from server.schemas import RegisterRequest, LoginRequest, TokenResponse
-from server.auth import get_password_hash, verify_password, create_access_token, decode_access_token
+from server.auth import (
+    _canonical_role_for_token,
+    create_access_token,
+    decode_access_token,
+    get_password_hash,
+    verify_password,
+    require_super_admin_or_hr_head,
+)
+from server.services.audit_service import audit_super_admin_action, STRUCTURE_CREATE
 from server.permissions_service import initialize_user_permissions, get_user_permission_profile
 from pydantic import BaseModel
 from typing import Optional
@@ -28,38 +36,24 @@ class OnboardEmployeeRequest(BaseModel):
 @router.post("/onboard-employee", response_model=TokenResponse)
 def onboard_employee(
     req: OnboardEmployeeRequest,
-    authorization: Optional[str] = Header(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _auth: dict = Depends(require_super_admin_or_hr_head),
 ):
     """
     Onboard a new employee directly into an existing organization.
     Only SUPER_ADMIN or HR_HEAD can call this endpoint.
     """
-    # Extract and validate token
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(401, "Missing or invalid authorization header")
-    
-    token = authorization.replace("Bearer ", "")
-    payload = decode_access_token(token)
-    
-    if not payload:
-        raise HTTPException(401, "Invalid token")
-    
-    admin_user_id = payload.get("sub")
+    admin_user_id = str(_auth.get("sub") or "")
     admin_user = db.query(User).filter(User.id == admin_user_id).first()
-    
+
     if not admin_user:
         raise HTTPException(401, "User not found")
-    
-    # Verify admin has permission
-    if admin_user.system_role not in ["SUPER_ADMIN", "HR_HEAD"]:
-        raise HTTPException(403, "Only admins can onboard employees")
-    
+
     # Check email not already registered
     existing = db.query(User).filter(User.email == req.email).first()
     if existing:
         raise HTTPException(400, "Email already registered")
-    
+
     # Create new user in the same organization
     user = User(
         org_id=admin_user.org_id,
@@ -76,13 +70,24 @@ def onboard_employee(
     db.flush()
     db.commit()
     db.refresh(user)
-    
+
     # Initialize permission profile with the assigned role
     initialize_user_permissions(user, db)
-    
+
+    audit_super_admin_action(
+        org_id=admin_user.org_id,
+        actor_user_id=admin_user_id,
+        action=STRUCTURE_CREATE,
+        entity_type="USER",
+        entity_id=user.id,
+        details={"source": "onboard_employee", "email": req.email, "system_role": req.system_role},
+    )
+
     org = db.query(Organization).filter(Organization.id == user.org_id).first()
-    token = create_access_token({"sub": user.id, "org_id": user.org_id, "role": user.system_role})
-    
+    token = create_access_token(
+        {"sub": user.id, "org_id": user.org_id, "role": _canonical_role_for_token(user.system_role)}
+    )
+
     return TokenResponse(
         access_token=token,
         user=_user_dict(user, org, db),
@@ -121,7 +126,9 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
     # Initialize permission profile for SUPER_ADMIN
     initialize_user_permissions(user, db)
 
-    token = create_access_token({"sub": user.id, "org_id": org.id, "role": user.system_role})
+    token = create_access_token(
+        {"sub": user.id, "org_id": org.id, "role": _canonical_role_for_token(user.system_role)}
+    )
     return TokenResponse(
         access_token=token,
         user=_user_dict(user, org, db),
@@ -141,7 +148,9 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
     # Ensure permission profile exists and is up-to-date
     initialize_user_permissions(user, db)
     
-    token = create_access_token({"sub": user.id, "org_id": user.org_id, "role": user.system_role})
+    token = create_access_token(
+        {"sub": user.id, "org_id": user.org_id, "role": _canonical_role_for_token(user.system_role)}
+    )
     return TokenResponse(
         access_token=token,
         user=_user_dict(user, org, db),
