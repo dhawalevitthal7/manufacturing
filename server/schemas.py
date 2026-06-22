@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional, List, Dict, Any
 
 
@@ -87,12 +87,14 @@ class OrgNodeUpdate(BaseModel):
     head_user_id: Optional[str] = None
     parent_id: Optional[str] = None  # Move node to a new parent
     node_metadata: Optional[Dict[str, Any]] = None
+    functional_parent_id: Optional[str] = None  # dotted-line parent (SUPER_ADMIN); omit key to leave unchanged
 
 class OrgNodeResponse(BaseModel):
     """Response representation of an org tree node with children."""
     id: str
     org_id: str
     parent_id: Optional[str]
+    functional_parent_id: Optional[str] = None
     node_type: str
     name: str
     code: Optional[str]
@@ -230,9 +232,12 @@ class ObjectiveCreate(BaseModel):
     parent_id: Optional[str] = None
     cycle_id: Optional[str] = None
     owner_id: Optional[str] = None
+    region_id: Optional[str] = None
     plant_id: Optional[str] = None
     department_id: Optional[str] = None
     team_id: Optional[str] = None
+    function_area: Optional[str] = None
+    function_node_id: Optional[str] = None
 
 class ObjectiveAssignCreate(BaseModel):
     """
@@ -255,6 +260,16 @@ class ObjectiveUpdate(BaseModel):
     level: Optional[str] = None
     parent_id: Optional[str] = None
     status: Optional[str] = None
+    function_area: Optional[str] = None
+    function_node_id: Optional[str] = None
+
+
+class ObjectiveFunctionalParentPatch(BaseModel):
+    """PATCH /api/okrs/{obj_id} — SUPER_ADMIN only; exactly one field."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    functional_parent_obj_id: Optional[str] = None
 
 class KeyResultCreate(BaseModel):
     title: str
@@ -267,6 +282,16 @@ class KeyResultUpdate(BaseModel):
     target_value: Optional[float] = None
     unit: Optional[str] = None
     weight: Optional[float] = None
+
+
+class KRIngestSourceConfigure(BaseModel):
+    """Phase 8: configure auto-ingest for a key result."""
+    source_system: str
+    source_metric_tag: str
+    transform_expr: Optional[str] = None
+    is_active: bool = True
+    rotate_token: bool = False
+
 
 class ProgressUpdateCreate(BaseModel):
     """Legacy progress update. Kept for backward compatibility."""
@@ -316,6 +341,15 @@ class ProgressSubmissionResponse(BaseModel):
     created_at: str
     reviewed_at: Optional[str]
 
+
+# ===== CYCLES =====
+class CycleCreate(BaseModel):
+    name: str
+    cycle_type: str = "QUARTERLY"
+    start_date: str
+    end_date: str
+    freeze_date: str
+    applies_to_levels: Optional[List[int]] = None
 
 # ===== REVIEWS =====
 class ReviewCycleCreate(BaseModel):

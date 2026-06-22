@@ -8,11 +8,25 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
   ChevronDown, ChevronRight, Plus, Target, TrendingUp, Trash2, Send,
-  GitBranch, Weight, CheckCircle, Clock, XCircle, AlertTriangle,
+  GitBranch, Weight, CheckCircle, Clock, XCircle, AlertTriangle, Lock, Radio,
 } from "lucide-react";
+import { KrIngestDialog } from "./kr-ingest-dialog";
 import { api } from "@/lib/api";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import type { Objective } from "@/lib/api";
+import { OkrLifecycleActions } from "./okr-lifecycle-actions";
+import { OkrCreationApprovalPanel } from "./okr-creation-approval-panel";
+import { OkrProgressValidationActions } from "./okr-progress-validation-actions";
+import { canSubmitOkrProgress, canManageOkrStructure } from "@/utils/okr-permissions";
+import { useAuthStore } from "@/lib/stores/auth-store";
+import type { PendingValidation } from "@/lib/api";
+
+const OKR_STATUS_BADGE: Record<string, string> = {
+  DRAFT: "text-slate-400 bg-slate-500/10 border-slate-500/30",
+  PENDING_APPROVAL: "text-amber-400 bg-amber-500/10 border-amber-500/30",
+  ACTIVE: "text-emerald-400 bg-emerald-500/10 border-emerald-500/30",
+  REJECTED: "text-rose-400 bg-rose-500/10 border-rose-500/30",
+};
 
 // ── Level colors ──
 const LEVEL_COLORS: Record<string, string> = {
@@ -34,13 +48,38 @@ interface Props {
   objective: Objective;
   canManage: boolean;
   onDelete?: (id: string) => void;
+  /** Pending progress submissions for this OKR (validator view). */
+  pendingValidations?: PendingValidation[];
+  canValidateProgress?: boolean;
 }
 
-export function OKRCard({ objective: okr, canManage, onDelete }: Props) {
+export function OKRCard({
+  objective: okr,
+  canManage,
+  onDelete,
+  pendingValidations = [],
+  canValidateProgress = false,
+}: Props) {
+  const { user } = useAuthStore();
   const [expanded, setExpanded] = useState(false);
   const [addKROpen, setAddKROpen] = useState(false);
   const [progressOpen, setProgressOpen] = useState<string | null>(null);
   const queryClient = useQueryClient();
+
+  const { data: cycles } = useQuery({
+    queryKey: ["cycles"],
+    queryFn: () => api.getCycles(),
+  });
+  
+  const okrCycle = cycles?.find(c => c.id === okr.cycle_id);
+  const isCycleLocked = okrCycle?.status === "FROZEN" || okrCycle?.status === "CLOSED";
+  const lifecycle = okr.okr_status || "ACTIVE";
+  // Allow KR progress entry while OKR is still being prepared (DRAFT/REJECTED).
+  // Once the OKR is submitted for approval (PENDING_APPROVAL), KR progress should be locked.
+  const isExecutionActive = lifecycle === "ACTIVE" || lifecycle === "DRAFT" || lifecycle === "REJECTED";
+  const canEditExecution = isExecutionActive && !isCycleLocked;
+  const canSubmitProgress = canEditExecution && canSubmitOkrProgress(okr, user);
+  const canEditStructure = canEditExecution && canManageOkrStructure(okr, user, canManage);
 
   // Add KR state
   const [krTitle, setKrTitle] = useState("");
@@ -52,6 +91,7 @@ export function OKRCard({ objective: okr, canManage, onDelete }: Props) {
   const [newValue, setNewValue] = useState("");
   const [progressNotes, setProgressNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [ingestKrId, setIngestKrId] = useState<string | null>(null);
 
   const pct = okr.progress ?? 0;
 
@@ -121,6 +161,9 @@ export function OKRCard({ objective: okr, canManage, onDelete }: Props) {
     ? "text-amber-400 bg-amber-500/10 border-amber-500/30"
     : "text-rose-400 bg-rose-500/10 border-rose-500/30";
 
+  const okrPendingValidations = pendingValidations.filter((v) => v.objective_id === okr.id);
+  const showValidationPanel = canValidateProgress && okrPendingValidations.length > 0;
+
   return (
     <>
       <Card className="hover:shadow-lg transition-all border-border/60 overflow-hidden group">
@@ -138,12 +181,22 @@ export function OKRCard({ objective: okr, canManage, onDelete }: Props) {
                   <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${LEVEL_COLORS[okr.level] || ""}`}>
                     {okr.level}
                   </Badge>
+                  {okr.okr_status && okr.okr_status !== "ACTIVE" && (
+                    <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${OKR_STATUS_BADGE[okr.okr_status] || ""}`}>
+                      {okr.okr_status.replace("_", " ")}
+                    </Badge>
+                  )}
                   <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${ratingColor}`}>
                     {ratingText}
                   </Badge>
                   {okr.parent_title && (
                     <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
                       <GitBranch className="h-3 w-3" /> {okr.parent_title}
+                    </span>
+                  )}
+                  {okr.functional_parent_title && (
+                    <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground border-l border-border pl-1.5 ml-0.5 border-dashed">
+                      <GitBranch className="h-3 w-3 text-muted-foreground/70" /> {okr.functional_parent_title} (Functional)
                     </span>
                   )}
                   {okr.owner_name && (
@@ -156,14 +209,40 @@ export function OKRCard({ objective: okr, canManage, onDelete }: Props) {
                     <span className="text-[10px] text-muted-foreground">• {okr.children_count} child OKR{(okr.children_count ?? 0) > 1 ? "s" : ""}</span>
                   )}
                 </div>
+                <OkrLifecycleActions okr={okr} />
               </div>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <div className="text-right">
-                <div className="text-lg font-bold tabular-nums">{pct}%</div>
-                <Badge variant={okr.status === "COMPLETED" ? "secondary" : "outline"} className="text-[10px]">
-                  {okr.status}
+            <div className="flex items-start gap-2 shrink-0">
+              {showValidationPanel && (
+                <OkrProgressValidationActions validations={okrPendingValidations} />
+              )}
+              {!showValidationPanel && canValidateProgress && (okr.pending_validations ?? 0) > 0 && (
+                <Badge variant="outline" className="text-[9px] border-amber-500/30 text-amber-400 bg-amber-500/10 shrink-0">
+                  <Clock className="h-2.5 w-2.5 mr-0.5" />
+                  {okr.pending_validations} pending
                 </Badge>
+              )}
+              <div className="text-right flex flex-col items-end gap-1">
+                <div className="flex items-center gap-2">
+                  <div className="text-lg font-bold tabular-nums leading-none">{pct}%</div>
+                  <Badge variant={okr.status === "COMPLETED" ? "secondary" : "outline"} className="text-[10px]">
+                    {okr.status}
+                  </Badge>
+                </div>
+                {okr.okr_status === "PENDING_APPROVAL" && (okr.parent_id || okr.functional_parent_obj_id) && (
+                  <div className="flex items-center gap-1 mt-0.5">
+                    {okr.parent_id && (
+                      <Badge variant="outline" className={`text-[8px] px-1 py-0 h-4 ${okr.creation_primary_approved_at ? 'text-emerald-500 border-emerald-500/30 bg-emerald-500/10' : 'text-amber-500 border-amber-500/30 bg-amber-500/10'}`}>
+                        Primary {okr.creation_primary_approved_at ? '✓' : '⏳'}
+                      </Badge>
+                    )}
+                    {okr.functional_parent_obj_id && (
+                      <Badge variant="outline" className={`text-[8px] px-1 py-0 h-4 ${okr.creation_functional_approved_at ? 'text-emerald-500 border-emerald-500/30 bg-emerald-500/10' : 'text-amber-500 border-amber-500/30 bg-amber-500/10'}`}>
+                        Functional {okr.creation_functional_approved_at ? '✓' : '⏳'}
+                      </Badge>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -192,12 +271,12 @@ export function OKRCard({ objective: okr, canManage, onDelete }: Props) {
                   )}
                 </h4>
                 <div className="flex gap-1">
-                  {canManage && (
+                  {canEditStructure && (
                     <Button size="sm" variant="ghost" className="h-6 text-xs gap-1" onClick={() => setAddKROpen(true)}>
                       <Plus className="h-3 w-3" /> Add KR
                     </Button>
                   )}
-                  {canManage && onDelete && (
+                  {canEditStructure && onDelete && (
                     <Button size="sm" variant="ghost" className="h-6 text-xs text-destructive" onClick={() => onDelete(okr.id)}>
                       <Trash2 className="h-3 w-3" />
                     </Button>
@@ -208,7 +287,18 @@ export function OKRCard({ objective: okr, canManage, onDelete }: Props) {
               {okr.key_results && okr.key_results.length > 0 ? (
                 <div className="space-y-2">
                   {okr.key_results.map((kr) => {
-                    const krPct = kr.progress_pct ?? (kr.target_value > 0 ? Math.min((kr.current_value / kr.target_value) * 100, 100) : 0);
+                    const hasPending = (kr.pending_updates ?? 0) > 0;
+                    const krValidations = okrPendingValidations.filter((v) => v.key_result_id === kr.id);
+                    const approvedValue = kr.current_value ?? 0;
+                    const displayValue =
+                      hasPending && kr.pending_submitted_value != null
+                        ? kr.pending_submitted_value
+                        : approvedValue;
+                    const krPct =
+                      kr.progress_pct ??
+                      (kr.target_value > 0
+                        ? Math.min((displayValue / kr.target_value) * 100, 100)
+                        : 0);
                     const krBarColor = krPct >= 75 ? "bg-emerald-500" : krPct >= 50 ? "bg-amber-500" : "bg-rose-500";
                     const krWeight = kr.weight || 1;
 
@@ -217,28 +307,75 @@ export function OKRCard({ objective: okr, canManage, onDelete }: Props) {
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex-1 min-w-0">
                             <p className="text-xs font-medium">{kr.title}</p>
-                            {kr.pending_updates && kr.pending_updates > 0 && (
+                            {hasPending && (
                               <p className="text-[9px] text-amber-400 flex items-center gap-1 mt-0.5">
                                 <Clock className="h-2.5 w-2.5" />
-                                {kr.pending_updates} pending approval{kr.pending_updates > 1 ? "s" : ""}
+                                {kr.pending_submitted_value != null ? (
+                                  <>
+                                    Submitted {kr.pending_submitted_value}/{kr.target_value} {kr.unit}
+                                    {" "}— awaiting approval
+                                  </>
+                                ) : (
+                                  <>
+                                    {kr.pending_updates} pending approval{kr.pending_updates !== 1 ? "s" : ""}
+                                  </>
+                                )}
+                              </p>
+                            )}
+                            {!hasPending && approvedValue > 0 && (
+                              <p className="text-[9px] text-muted-foreground mt-0.5 tabular-nums">
+                                Approved: {approvedValue}/{kr.target_value} {kr.unit}
                               </p>
                             )}
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap justify-end">
                             {/* Approval status badge */}
-                            {kr.pending_updates && kr.pending_updates > 0 && (
+                            {hasPending && (
                               <Badge variant="outline" className="text-[9px] px-1 py-0 bg-amber-500/10 text-amber-400 border-amber-500/20 animate-pulse">
                                 <Clock className="h-2 w-2 mr-0.5" />
                                 Awaiting
+                              </Badge>
+                            )}
+                            {canValidateProgress && krValidations.length > 0 && (
+                              <OkrProgressValidationActions
+                                validations={krValidations}
+                                variant="inline"
+                              />
+                            )}
+                            {kr.auto_ingest_active && (
+                              <Badge variant="outline" className="text-[9px] px-1 py-0 gap-0.5 bg-cyan-500/10 text-cyan-400 border-cyan-500/30">
+                                <Radio className="h-2 w-2" /> Live
                               </Badge>
                             )}
                             {/* Weight badge */}
                             <Badge variant="outline" className="text-[9px] px-1 py-0 gap-0.5 bg-blue-500/5 text-blue-400 border-blue-500/20">
                               <Weight className="h-2 w-2" /> W{krWeight}
                             </Badge>
+                            {canEditStructure && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-5 text-[10px] px-1"
+                                onClick={() => setIngestKrId(kr.id)}
+                                title="Configure auto-update from MES/SCADA"
+                              >
+                                <Radio className="h-2.5 w-2.5" />
+                              </Button>
+                            )}
                             {/* Progress values */}
                             <span className="text-[10px] text-muted-foreground tabular-nums whitespace-nowrap">
-                              {kr.current_value}/{kr.target_value} {kr.unit}
+                              {hasPending && kr.pending_submitted_value != null ? (
+                                <>
+                                  <span className="text-muted-foreground/70">{approvedValue}</span>
+                                  <span className="mx-0.5">→</span>
+                                  <span className="text-amber-400 font-medium">{displayValue}</span>
+                                  /{kr.target_value} {kr.unit}
+                                </>
+                              ) : (
+                                <>
+                                  {approvedValue}/{kr.target_value} {kr.unit}
+                                </>
+                              )}
                             </span>
                             {/* Percentage */}
                             <span className={`text-[10px] font-semibold tabular-nums ${krPct >= 75 ? "text-emerald-400" : krPct >= 50 ? "text-amber-400" : "text-rose-400"}`}>
@@ -249,9 +386,34 @@ export function OKRCard({ objective: okr, canManage, onDelete }: Props) {
                               size="sm"
                               variant="outline"
                               className="h-5 text-[10px] px-1.5 gap-0.5"
-                              onClick={() => setProgressOpen(kr.id)}
+                              onClick={() => {
+                                setProgressOpen(kr.id);
+                                setNewValue(
+                                  String(
+                                    kr.pending_submitted_value ??
+                                      kr.current_value ??
+                                      0,
+                                  ),
+                                );
+                                setProgressNotes(kr.pending_submitted_note ?? "");
+                              }}
+                              disabled={!canSubmitProgress}
+                              title={
+                                !canSubmitProgress
+                                  ? okr.level === "TEAM"
+                                    ? "Team progress is submitted by the team lead (OKR owner)"
+                                    : okr.level === "INDIVIDUAL" && okr.owner_id !== user?.id
+                                      ? "Only the assigned employee can submit progress"
+                                      : !isExecutionActive
+                                        ? "Progress entry disabled while OKR is pending approval"
+                                        : isCycleLocked
+                                          ? "Progress submission locked for this cycle"
+                                          : "You cannot submit progress on this OKR"
+                                  : "Submit Progress"
+                              }
                             >
-                              <Send className="h-2.5 w-2.5" /> Submit
+                              {!canSubmitProgress ? <Lock className="h-2.5 w-2.5" /> : <Send className="h-2.5 w-2.5" />}
+                              {!canSubmitProgress ? "Locked" : "Submit"}
                             </Button>
                           </div>
                         </div>
@@ -279,6 +441,10 @@ export function OKRCard({ objective: okr, canManage, onDelete }: Props) {
                   </p>
                 </div>
               )}
+
+              <div className="mt-3">
+                <OkrCreationApprovalPanel okr={okr} />
+              </div>
             </div>
           </CardContent>
         )}
@@ -309,6 +475,14 @@ export function OKRCard({ objective: okr, canManage, onDelete }: Props) {
         </DialogContent>
       </Dialog>
 
+      {ingestKrId && okr.key_results && (
+        <KrIngestDialog
+          kr={okr.key_results.find((k) => k.id === ingestKrId)!}
+          open={!!ingestKrId}
+          onOpenChange={(o) => !o && setIngestKrId(null)}
+        />
+      )}
+
       {/* Submit Progress Dialog */}
       <Dialog open={!!progressOpen} onOpenChange={() => setProgressOpen(null)}>
         <DialogContent className="sm:max-w-md">
@@ -327,7 +501,26 @@ export function OKRCard({ objective: okr, canManage, onDelete }: Props) {
             </div>
             <div className="grid gap-1">
               <Label>New Value</Label>
-              <Input type="number" value={newValue} onChange={e => setNewValue(e.target.value)} placeholder="Enter current value" />
+              <Input
+                type="number"
+                value={newValue}
+                onChange={e => setNewValue(e.target.value)}
+                placeholder="Enter current value"
+              />
+              {progressOpen && okr.key_results && (() => {
+                const kr = okr.key_results.find((k) => k.id === progressOpen);
+                if (!kr) return null;
+                return (
+                  <p className="text-[10px] text-muted-foreground tabular-nums">
+                    Current approved: {kr.current_value ?? 0}/{kr.target_value} {kr.unit}
+                    {kr.pending_submitted_value != null && (
+                      <span className="text-amber-400">
+                        {" "}· Pending: {kr.pending_submitted_value}/{kr.target_value} {kr.unit}
+                      </span>
+                    )}
+                  </p>
+                );
+              })()}
             </div>
             <div className="grid gap-1">
               <Label>Notes (optional)</Label>

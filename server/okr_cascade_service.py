@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from server.models import (
     Objective,
     KeyResult,
@@ -122,6 +123,104 @@ class OKRCascadeService:
     def __init__(self, db: Session):
         self.db = db
 
+    def _rollup_children_for_parent(self, parent_id: str) -> List[Objective]:
+        """
+        Objectives whose progress rolls into ``parent_id`` for aggregation.
+
+        Includes solid-tree children (``parent_id``) and dotted-line children
+        (``functional_parent_obj_id``). If the same objective is linked both ways
+        to ``parent_id``, it appears **twice** so its progress is weighted twice —
+        intentional dual-reporting rollup (Phase 4.3 / CURSOR_REFACTOR_PROMPT.md).
+        """
+        primary = (
+            self.db.query(Objective)
+            .filter(
+                Objective.parent_id == parent_id,
+                or_(
+                    Objective.okr_status == "ACTIVE",
+                    Objective.okr_status.is_(None),
+                    Objective.okr_status == "",
+                ),
+            )
+            .all()
+        )
+        functional = (
+            self.db.query(Objective)
+            .filter(
+                Objective.functional_parent_obj_id == parent_id,
+                or_(
+                    Objective.okr_status == "ACTIVE",
+                    Objective.okr_status.is_(None),
+                    Objective.okr_status == "",
+                ),
+            )
+            .all()
+        )
+        return primary + functional
+
+    def _apply_parent_rollup_from_children(self, parent: Objective) -> None:
+        """Set ``parent.progress`` / ``parent.status`` from its rollup children + own KRs."""
+        children = self._rollup_children_for_parent(parent.id)
+
+        # Duplicate rows in ``children`` (same id via parent_id + functional_parent_obj_id)
+        # intentionally double-weight the child in ``weighted_average`` (Phase 4.3).
+        child_scores: List[Tuple[float, float]] = []
+        for child in children:
+            if child.progress is not None:
+                child_scores.append((child.progress, 1.0))
+
+        parent_krs = (
+            self.db.query(KeyResult)
+            .filter(KeyResult.objective_id == parent.id)
+            .all()
+        )
+        if parent_krs:
+            kr_result = calculate_objective_progress(parent_krs)
+            if kr_result["total_key_results"] > 0:
+                own_progress = kr_result["progress"]
+                children_progress = (
+                    weighted_average(child_scores) if child_scores else 0.0
+                )
+                if child_scores:
+                    parent.progress = round(
+                        (own_progress * 0.5 + children_progress * 0.5), 1
+                    )
+                else:
+                    parent.progress = own_progress
+            else:
+                parent.progress = (
+                    weighted_average(child_scores) if child_scores else 0.0
+                )
+        else:
+            parent.progress = (
+                weighted_average(child_scores) if child_scores else 0.0
+            )
+
+        parent.status = "COMPLETED" if parent.progress >= 100 else "ACTIVE"
+
+    def refresh_objective_progress_for_session(self, objective_id: str) -> None:
+        """
+        Recompute ``progress`` / ``status`` without ``commit`` — for callers inside a transaction.
+
+        Uses the same rollup rules as ``propagate_progress_upward`` (Phase 4.3): if this
+        objective has any rollup children (``parent_id`` or ``functional_parent_obj_id``
+        edges), aggregate from those plus own KRs; otherwise from KRs only.
+        """
+        obj = self.db.query(Objective).filter(Objective.id == objective_id).first()
+        if not obj:
+            return
+        if self._rollup_children_for_parent(objective_id):
+            self._apply_parent_rollup_from_children(obj)
+            return
+        krs = (
+            self.db.query(KeyResult)
+            .filter(KeyResult.objective_id == objective_id)
+            .all()
+        )
+        result = calculate_objective_progress(krs)
+        obj.progress = result["progress"]
+        obj.status = "COMPLETED" if result["progress"] >= 100 else "ACTIVE"
+
     # ── Role-based creation rules (delegate to server.roles) ─────────────────
 
     def can_create_at_level(self, role: str, level: str) -> bool:
@@ -203,73 +302,56 @@ class OKRCascadeService:
             "progress": obj.progress,
         })
 
-        # Walk up the parent chain
-        current = obj
         visited = {obj.id}
-        while current.parent_id and current.parent_id not in visited:
-            parent = (
-                self.db.query(Objective)
-                .filter(Objective.id == current.parent_id)
-                .first()
-            )
-            if not parent:
-                warnings.append(f"Parent {current.parent_id} not found")
-                break
 
-            visited.add(parent.id)
-
-            # Recalculate parent from ALL its children + own KRs
-            children = (
-                self.db.query(Objective)
-                .filter(Objective.parent_id == parent.id)
-                .all()
-            )
-
-            # Collect child progress scores
-            child_scores: List[Tuple[float, float]] = []
-            for child in children:
-                if child.progress is not None:
-                    child_scores.append((child.progress, 1.0))
-
-            # Also include parent's own KR progress if any
-            parent_krs = (
-                self.db.query(KeyResult)
-                .filter(KeyResult.objective_id == parent.id)
-                .all()
-            )
-            if parent_krs:
-                kr_result = calculate_objective_progress(parent_krs)
-                if kr_result["total_key_results"] > 0:
-                    # Parent's own KRs contribute 50%, children contribute 50%
-                    own_progress = kr_result["progress"]
-                    children_progress = (
-                        weighted_average(child_scores) if child_scores else 0.0
-                    )
-                    if child_scores:
-                        parent.progress = round(
-                            (own_progress * 0.5 + children_progress * 0.5), 1
-                        )
-                    else:
-                        parent.progress = own_progress
-                else:
-                    parent.progress = (
-                        weighted_average(child_scores) if child_scores else 0.0
-                    )
-            else:
-                parent.progress = (
-                    weighted_average(child_scores) if child_scores else 0.0
+        def step_solid_chain(start: Objective) -> None:
+            """Walk ``parent_id`` ancestors, rolling up each parent from dual child edges."""
+            current = start
+            while current.parent_id and current.parent_id not in visited:
+                parent = (
+                    self.db.query(Objective)
+                    .filter(Objective.id == current.parent_id)
+                    .first()
                 )
+                if not parent:
+                    warnings.append(f"Parent {current.parent_id} not found")
+                    break
+                visited.add(parent.id)
+                self._apply_parent_rollup_from_children(parent)
+                self.db.commit()
+                propagated.append({
+                    "id": parent.id,
+                    "level": parent.level,
+                    "progress": parent.progress,
+                })
+                current = parent
 
-            parent.status = "COMPLETED" if parent.progress >= 100 else "ACTIVE"
-            self.db.commit()
+        step_solid_chain(obj)
 
-            propagated.append({
-                "id": parent.id,
-                "level": parent.level,
-                "progress": parent.progress,
-            })
-
-            current = parent
+        # Phase 4.3: dotted-line parent may be off the solid ``parent_id`` chain — roll it up too.
+        obj_after = self.db.query(Objective).filter(Objective.id == obj_id).first()
+        if obj_after and obj_after.functional_parent_obj_id:
+            fp_id = obj_after.functional_parent_obj_id
+            if fp_id not in visited:
+                fp = (
+                    self.db.query(Objective)
+                    .filter(Objective.id == fp_id)
+                    .first()
+                )
+                if not fp:
+                    warnings.append(
+                        f"Functional parent objective {fp_id} not found"
+                    )
+                else:
+                    visited.add(fp.id)
+                    self._apply_parent_rollup_from_children(fp)
+                    self.db.commit()
+                    propagated.append({
+                        "id": fp.id,
+                        "level": fp.level,
+                        "progress": fp.progress,
+                    })
+                    step_solid_chain(fp)
 
         return {
             "success": True,
@@ -278,16 +360,17 @@ class OKRCascadeService:
         }
 
     def get_cascade_tree(
-        self, org_id: str, plant_id: Optional[str] = None
+        self, org_id: str, plant_id: Optional[str] = None, cycle_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Build the full OKR cascade tree for visualization.
         Returns nested structure: Org → Plant → Dept → Team → Individual
         """
         q = self.db.query(Objective).filter(Objective.org_id == org_id)
+        if cycle_id:
+            q = q.filter(Objective.cycle_id == cycle_id)
         if plant_id:
             # Include org-level (no plant) + plant-scoped
-            from sqlalchemy import or_
             q = q.filter(
                 or_(
                     Objective.plant_id == plant_id,
@@ -323,13 +406,20 @@ class OKRCascadeService:
                 "children": [],
             }
 
-        # Build tree
+        # Build tree: solid ``parent_id`` and dotted-line ``functional_parent_obj_id``.
+        # Same node may appear twice under one parent when both links match (Phase 4.3).
         roots = []
         for o in objs:
             node = obj_map[o.id]
+            attached = False
             if o.parent_id and o.parent_id in obj_map:
                 obj_map[o.parent_id]["children"].append(node)
-            else:
+                attached = True
+            fp = o.functional_parent_obj_id
+            if fp and fp in obj_map:
+                obj_map[fp]["children"].append(node)
+                attached = True
+            if not attached:
                 roots.append(node)
 
         return roots
@@ -340,7 +430,7 @@ class OKRCascadeService:
         """
         Get aggregate progress summary by level for dashboard display.
         """
-        levels = ["ORGANIZATION", "PLANT", "DEPARTMENT", "TEAM", "INDIVIDUAL"]
+        levels = ["ORGANIZATION", "REGION", "PLANT", "DEPARTMENT", "TEAM", "INDIVIDUAL"]
         summary = {}
 
         for level in levels:
@@ -348,7 +438,7 @@ class OKRCascadeService:
                 Objective.org_id == org_id,
                 Objective.level == level,
             )
-            if plant_id and level != "ORGANIZATION":
+            if plant_id and level not in ("ORGANIZATION", "REGION"):
                 q = q.filter(Objective.plant_id == plant_id)
 
             objs = q.all()

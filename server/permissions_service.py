@@ -67,13 +67,21 @@ def _capabilities_for_role(role: SystemRole) -> dict:
 
 
 def _region_scope_id_for_user(user: User, db: Session) -> Optional[str]:
-    """Resolve REGION org node id for REGIONAL_HEAD from user.org_node_id when it points at a REGION."""
-    if not user.org_node_id:
-        return None
-    node = db.query(OrgNode).filter(OrgNode.id == user.org_node_id).first()
-    if node and str(node.node_type) == "REGION":
-        return node.id
-    return None
+    """Resolve REGION org node id for REGIONAL_HEAD (org_node_id or region head assignment)."""
+    if user.org_node_id:
+        node = db.query(OrgNode).filter(OrgNode.id == user.org_node_id).first()
+        if node and str(node.node_type) == "REGION":
+            return node.id
+    region = (
+        db.query(OrgNode)
+        .filter(
+            OrgNode.org_id == user.org_id,
+            OrgNode.node_type == "REGION",
+            OrgNode.head_user_id == user.id,
+        )
+        .first()
+    )
+    return region.id if region else None
 
 
 DEFAULT_ROLE_CAPABILITIES: dict[SystemRole, dict] = {
@@ -120,6 +128,40 @@ DEFAULT_ROLE_CAPABILITIES: dict[SystemRole, dict] = {
         ],
     },
     SystemRole.VP_OPERATIONS: {
+        "scope_type": "ORGANIZATION",
+        "can_view_all_plants": True,
+        "can_view_all_departments": True,
+        "can_view_all_teams": False,
+        "can_view_all_employees": False,
+        "can_create_plants": False,
+        "can_create_departments": False,
+        "can_create_teams": False,
+        "can_create_designations": False,
+        "can_configure_permissions": False,
+        "can_invite_employees": False,
+        "can_assign_roles": False,
+        "can_access_analytics": True,
+        "can_access_audit_logs": False,
+        "modules": list(_VP_OPS_STYLE_MODULES),
+    },
+    SystemRole.COO: {
+        "scope_type": "ORGANIZATION",
+        "can_view_all_plants": True,
+        "can_view_all_departments": True,
+        "can_view_all_teams": False,
+        "can_view_all_employees": False,
+        "can_create_plants": False,
+        "can_create_departments": False,
+        "can_create_teams": False,
+        "can_create_designations": False,
+        "can_configure_permissions": False,
+        "can_invite_employees": False,
+        "can_assign_roles": False,
+        "can_access_analytics": True,
+        "can_access_audit_logs": False,
+        "modules": list(_VP_OPS_STYLE_MODULES),
+    },
+    SystemRole.CRO: {
         "scope_type": "ORGANIZATION",
         "can_view_all_plants": True,
         "can_view_all_departments": True,
@@ -221,13 +263,140 @@ DEFAULT_ROLE_CAPABILITIES: dict[SystemRole, dict] = {
         "can_access_analytics": True,
         "can_access_audit_logs": False,
         "modules": [
+            "ORG_OKRS",
             "PLANT_OKRS",
             "DEPT_OKRS",
             "TEAM_OKRS",
             "EMPLOYEE_OKRS",
             "PROGRESS_TRACKING",
             "ALIGNMENT_DASHBOARD",
+            "APPROVAL_QUEUE",
             "AI_INSIGHTS",
+        ],
+    },
+    SystemRole.CPO: {
+        "scope_type": "ORGANIZATION",
+        "can_view_all_plants": True,
+        "can_view_all_departments": True,
+        "can_view_all_teams": True,
+        "can_view_all_employees": True,
+        "can_create_plants": False,
+        "can_create_departments": False,
+        "can_create_teams": False,
+        "can_create_designations": False,
+        "can_configure_permissions": False,
+        "can_invite_employees": False,
+        "can_assign_roles": False,
+        "can_access_analytics": True,
+        "can_access_audit_logs": False,
+        "modules": [
+            "ORG_OKRS",
+            "ORG_VISIBILITY",
+            "PLANT_OKRS",
+            "DEPT_OKRS",
+            "ALIGNMENT_DASHBOARD",
+            "REVIEW_ANALYTICS",
+            "APPROVAL_QUEUE",
+            "AI_INSIGHTS",
+        ],
+    },
+    SystemRole.CSO: {
+        "scope_type": "ORGANIZATION",
+        "can_view_all_plants": True,
+        "can_view_all_departments": True,
+        "can_view_all_teams": True,
+        "can_view_all_employees": True,
+        "can_create_plants": False,
+        "can_create_departments": False,
+        "can_create_teams": False,
+        "can_create_designations": False,
+        "can_configure_permissions": False,
+        "can_invite_employees": False,
+        "can_assign_roles": False,
+        "can_access_analytics": True,
+        "can_access_audit_logs": False,
+        "modules": [
+            "ORG_OKRS",
+            "ORG_VISIBILITY",
+            "PLANT_OKRS",
+            "DEPT_OKRS",
+            "ALIGNMENT_DASHBOARD",
+            "REVIEW_ANALYTICS",
+            "APPROVAL_QUEUE",
+            "AI_INSIGHTS",
+        ],
+    },
+    SystemRole.CHRO: {
+        "scope_type": "ORGANIZATION",
+        "can_view_all_plants": True,
+        "can_view_all_departments": True,
+        "can_view_all_teams": True,
+        "can_view_all_employees": True,
+        "can_create_plants": False,
+        "can_create_departments": False,
+        "can_create_teams": False,
+        "can_create_designations": False,
+        "can_configure_permissions": False,
+        "can_invite_employees": False,
+        "can_assign_roles": False,
+        "can_access_analytics": True,
+        "can_access_audit_logs": True,
+        "modules": [
+            "ORG_OKRS",
+            "ORG_VISIBILITY",
+            "PLANT_OKRS",
+            "DEPT_OKRS",
+            "ALIGNMENT_DASHBOARD",
+            "REVIEW_ANALYTICS",
+            "APPROVAL_QUEUE",
+            "AI_INSIGHTS",
+        ],
+    },
+    SystemRole.FUNCTIONAL_SUB_HEAD: {
+        "scope_type": "ORGANIZATION",
+        "can_view_all_plants": True,
+        "can_view_all_departments": True,
+        "can_view_all_teams": False,
+        "can_view_all_employees": False,
+        "can_create_plants": False,
+        "can_create_departments": False,
+        "can_create_teams": False,
+        "can_create_designations": False,
+        "can_configure_permissions": False,
+        "can_invite_employees": False,
+        "can_assign_roles": False,
+        "can_access_analytics": True,
+        "can_access_audit_logs": False,
+        "modules": [
+            "DEPT_OKRS",
+            "TEAM_OKRS",
+            "ALIGNMENT_DASHBOARD",
+            "APPROVAL_QUEUE",
+            "AI_INSIGHTS",
+        ],
+    },
+    SystemRole.AREA_SALES_MANAGER: {
+        "scope_type": "DEPARTMENT",
+        "can_view_all_plants": False,
+        "can_view_all_departments": False,
+        "can_view_all_teams": True,
+        "can_view_all_employees": False,
+        "can_create_plants": False,
+        "can_create_departments": False,
+        "can_create_teams": False,
+        "can_create_designations": False,
+        "can_configure_permissions": False,
+        "can_invite_employees": False,
+        "can_assign_roles": False,
+        "can_access_analytics": True,
+        "can_access_audit_logs": False,
+        "modules": [
+            "TEAM_OKRS",
+            "EMPLOYEE_OKRS",
+            "PROGRESS_TRACKING",
+            "ALIGNMENT_DASHBOARD",
+            "REVIEW_DASHBOARD",
+            "APPROVAL_QUEUE",
         ],
     },
     SystemRole.PLANT_HEAD: {
@@ -291,7 +460,7 @@ DEFAULT_ROLE_CAPABILITIES: dict[SystemRole, dict] = {
         ],
     },
     SystemRole.MANAGER: {
-        "scope_type": "TEAM",
+        "scope_type": "DEPARTMENT",
         "can_view_all_plants": False,
         "can_view_all_departments": False,
         "can_view_all_teams": False,
@@ -375,7 +544,6 @@ DEFAULT_ROLE_CAPABILITIES: dict[SystemRole, dict] = {
         "modules": [
             "EMPLOYEE_OKRS",
             "PROGRESS_TRACKING",
-            "ALIGNMENT_DASHBOARD",
             "REVIEW_DASHBOARD",
             "AI_OKR_ASSIST",
         ],

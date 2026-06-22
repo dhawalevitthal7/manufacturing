@@ -1,0 +1,1644 @@
+C:\Users\dhawa\Desktop\manufacturing\scripts\update_okr_progress_all.py:186: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  print(f"Timestamp: {datetime.utcnow().isoformat()}")
+
+======================================================================
+OKR PROGRESS UPDATE - ULTRATECH CEMENT COMPANY
+======================================================================
+Organization ID: 6854e49b-e593-44bb-9553-5f6637654bc1
+Levels: ORGANIZATION, PLANT, DEPARTMENT, TEAM, INDIVIDUAL
+Timestamp: 2026-05-21T06:11:39.221669
+
+======================================================================
+UPDATING ORGANIZATION LEVEL OKRs
+======================================================================
+Found 1 OKRs at ORGANIZATION level
+
+Γ£ô Achieve Production Excellence & Growth
+  KR: 'Increase production capacity by 25%' ΓåÆ 5.95/25.0 (23.8%)
+  KR: 'Achieve 98% operational efficiency' ΓåÆ 23.32/98.0 (23.8%)
+  KR: 'Reduce quality defects by 40%' ΓåÆ 9.52/40.0 (23.8%)
+
+ΓåÆ Updated 1 ORGANIZATION OKRs
+
+======================================================================
+UPDATING PLANT LEVEL OKRs
+======================================================================
+Found 8 OKRs at PLANT level
+
+Γ£ô Sutlej Plant - Production & Safety Excellence
+  KR: 'Achieve 99% on-time delivery' ΓåÆ 3.56/99.0 (3.6%)
+  KR: 'Zero lost-time incidents' ΓåÆ 0.0/0.0 (3.6%)
+  KR: 'Improve energy efficiency by 15%' ΓåÆ 0.54/15.0 (3.6%)
+
+Γ£ô Himachal Plant - Production & Safety Excellence
+  KR: 'Achieve 99% on-time delivery' ΓåÆ 57.32/99.0 (57.9%)
+  KR: 'Zero lost-time incidents' ΓåÆ 0.0/0.0 (57.9%)
+  KR: 'Improve energy efficiency by 15%' ΓåÆ 8.68/15.0 (57.9%)
+
+Γ£ô Karnataka Plant - Production & Safety Excellence
+  KR: 'Achieve 99% on-time delivery' ΓåÆ 96.92/99.0 (97.9%)
+  KR: 'Zero lost-time incidents' ΓåÆ 0.0/0.0 (97.9%)
+  KR: 'Improve energy efficiency by 15%' ΓåÆ 14.69/15.0 (97.9%)
+
+Γ£ô Tamil Nadu Plant - Production & Safety Excellence
+  KR: 'Achieve 99% on-time delivery' ΓåÆ 39.5/99.0 (39.9%)
+  KR: 'Zero lost-time incidents' ΓåÆ 0.0/0.0 (39.9%)
+  KR: 'Improve energy efficiency by 15%' ΓåÆ 5.98/15.0 (39.9%)
+
+Γ£ô Odisha Plant - Production & Safety Excellence
+  KR: 'Achieve 99% on-time delivery' ΓåÆ 35.74/99.0 (36.1%)
+  KR: 'Zero lost-time incidents' ΓåÆ 0.0/0.0 (36.1%)
+  KR: 'Improve energy efficiency by 15%' ΓåÆ 5.42/15.0 (36.1%)
+
+Γ£ô Jharkhand Plant - Production & Safety Excellence
+  KR: 'Achieve 99% on-time delivery' ΓåÆ 81.97/99.0 (82.8%)
+  KR: 'Zero lost-time incidents' ΓåÆ 0.0/0.0 (82.8%)
+  KR: 'Improve energy efficiency by 15%' ΓåÆ 12.42/15.0 (82.8%)
+
+Γ£ô Gujarat Plant - Production & Safety Excellence
+  KR: 'Achieve 99% on-time delivery' ΓåÆ 12.67/99.0 (12.8%)
+  KR: 'Zero lost-time incidents' ΓåÆ 0.0/0.0 (12.8%)
+  KR: 'Improve energy efficiency by 15%' ΓåÆ 1.92/15.0 (12.8%)
+
+Γ£ô Rajasthan Plant - Production & Safety Excellence
+  KR: 'Achieve 99% on-time delivery' ΓåÆ 70.49/99.0 (71.2%)
+  KR: 'Zero lost-time incidents' ΓåÆ 0.0/0.0 (71.2%)
+  KR: 'Improve energy efficiency by 15%' ΓåÆ 10.68/15.0 (71.2%)
+
+ΓåÆ Updated 8 PLANT OKRs
+
+======================================================================
+UPDATING DEPARTMENT LEVEL OKRs
+======================================================================
+Found 40 OKRs at DEPARTMENT level
+
+Γ£ô Production - Output & Efficiency Targets
+  KR: 'Achieve 95% capacity utilization' ΓåÆ 32.02/95.0 (33.7%)
+  KR: 'Reduce downtime to <5%' ΓåÆ 10.11/30.0 (33.7%)
+  KR: 'Improve yield by 8%' ΓåÆ 10.11/30.0 (33.7%)
+
+Γ£ô Quality Assurance - Quality & Compliance
+  KR: 'Maintain 99.5% quality score' ΓåÆ 27.93/30.0 (93.1%)
+  KR: 'Complete 100% compliance audits' ΓåÆ 27.93/30.0 (93.1%)
+  KR: 'Reduce rework by 30%' ΓåÆ 27.93/30.0 (93.1%)
+
+Γ£ô Maintenance & Engineering - Reliability & Maintenance
+  KR: 'Achieve 96% equipment uptime' ΓåÆ 64.98/95.0 (68.4%)
+  KR: 'Reduce maintenance costs by 20%' ΓåÆ 20.52/30.0 (68.4%)
+  KR: 'Complete preventive maintenance 100%' ΓåÆ 20.52/30.0 (68.4%)
+
+Γ£ô Administration - Operations
+  KR: 'Achieve all department targets' ΓåÆ 62.04/95.0 (65.3%)
+  KR: 'Maintain 100% compliance' ΓåÆ 19.59/30.0 (65.3%)
+
+Γ£ô Human Resources - Operations
+  KR: 'Achieve all department targets' ΓåÆ 87.78/95.0 (92.4%)
+  KR: 'Maintain 100% compliance' ΓåÆ 27.72/30.0 (92.4%)
+
+Γ£ô Production - Output & Efficiency Targets
+  KR: 'Achieve 95% capacity utilization' ΓåÆ 54.62/95.0 (57.5%)
+  KR: 'Reduce downtime to <5%' ΓåÆ 17.25/30.0 (57.5%)
+  KR: 'Improve yield by 8%' ΓåÆ 17.25/30.0 (57.5%)
+
+Γ£ô Quality Assurance - Quality & Compliance
+  KR: 'Maintain 99.5% quality score' ΓåÆ 13.77/30.0 (45.9%)
+  KR: 'Complete 100% compliance audits' ΓåÆ 13.77/30.0 (45.9%)
+  KR: 'Reduce rework by 30%' ΓåÆ 13.77/30.0 (45.9%)
+
+Γ£ô Maintenance & Engineering - Reliability & Maintenance
+  KR: 'Achieve 96% equipment uptime' ΓåÆ 84.27/95.0 (88.7%)
+  KR: 'Reduce maintenance costs by 20%' ΓåÆ 26.61/30.0 (88.7%)
+  KR: 'Complete preventive maintenance 100%' ΓåÆ 26.61/30.0 (88.7%)
+
+Γ£ô Administration - Operations
+  KR: 'Achieve all department targets' ΓåÆ 84.45/95.0 (88.9%)
+  KR: 'Maintain 100% compliance' ΓåÆ 26.67/30.0 (88.9%)
+
+Γ£ô Human Resources - Operations
+  KR: 'Achieve all department targets' ΓåÆ 72.29/95.0 (76.1%)
+  KR: 'Maintain 100% compliance' ΓåÆ 22.83/30.0 (76.1%)
+
+Γ£ô Production - Output & Efficiency Targets
+  KR: 'Achieve 95% capacity utilization' ΓåÆ 43.51/95.0 (45.8%)
+  KR: 'Reduce downtime to <5%' ΓåÆ 13.74/30.0 (45.8%)
+  KR: 'Improve yield by 8%' ΓåÆ 13.74/30.0 (45.8%)
+
+Γ£ô Quality Assurance - Quality & Compliance
+  KR: 'Maintain 99.5% quality score' ΓåÆ 10.86/30.0 (36.2%)
+  KR: 'Complete 100% compliance audits' ΓåÆ 10.86/30.0 (36.2%)
+  KR: 'Reduce rework by 30%' ΓåÆ 10.86/30.0 (36.2%)
+
+Γ£ô Maintenance & Engineering - Reliability & Maintenance
+  KR: 'Achieve 96% equipment uptime' ΓåÆ 55.38/95.0 (58.3%)
+  KR: 'Reduce maintenance costs by 20%' ΓåÆ 17.49/30.0 (58.3%)
+  KR: 'Complete preventive maintenance 100%' ΓåÆ 17.49/30.0 (58.3%)
+
+Γ£ô Administration - Operations
+  KR: 'Achieve all department targets' ΓåÆ 10.64/95.0 (11.2%)
+  KR: 'Maintain 100% compliance' ΓåÆ 3.36/30.0 (11.2%)
+
+Γ£ô Human Resources - Operations
+  KR: 'Achieve all department targets' ΓåÆ 3.61/95.0 (3.8%)
+  KR: 'Maintain 100% compliance' ΓåÆ 1.14/30.0 (3.8%)
+
+Γ£ô Production - Output & Efficiency Targets
+  KR: 'Achieve 95% capacity utilization' ΓåÆ 94.53/95.0 (99.5%)
+  KR: 'Reduce downtime to <5%' ΓåÆ 29.85/30.0 (99.5%)
+  KR: 'Improve yield by 8%' ΓåÆ 29.85/30.0 (99.5%)
+
+Γ£ô Quality Assurance - Quality & Compliance
+  KR: 'Maintain 99.5% quality score' ΓåÆ 11.4/30.0 (38.0%)
+  KR: 'Complete 100% compliance audits' ΓåÆ 11.4/30.0 (38.0%)
+  KR: 'Reduce rework by 30%' ΓåÆ 11.4/30.0 (38.0%)
+
+Γ£ô Maintenance & Engineering - Reliability & Maintenance
+  KR: 'Achieve 96% equipment uptime' ΓåÆ 75.72/95.0 (79.7%)
+  KR: 'Reduce maintenance costs by 20%' ΓåÆ 23.91/30.0 (79.7%)
+  KR: 'Complete preventive maintenance 100%' ΓåÆ 23.91/30.0 (79.7%)
+
+Γ£ô Administration - Operations
+  KR: 'Achieve all department targets' ΓåÆ 68.88/95.0 (72.5%)
+  KR: 'Maintain 100% compliance' ΓåÆ 21.75/30.0 (72.5%)
+
+Γ£ô Human Resources - Operations
+  KR: 'Achieve all department targets' ΓåÆ 10.93/95.0 (11.5%)
+  KR: 'Maintain 100% compliance' ΓåÆ 3.45/30.0 (11.5%)
+
+Γ£ô Production - Output & Efficiency Targets
+  KR: 'Achieve 95% capacity utilization' ΓåÆ 32.87/95.0 (34.6%)
+  KR: 'Reduce downtime to <5%' ΓåÆ 10.38/30.0 (34.6%)
+  KR: 'Improve yield by 8%' ΓåÆ 10.38/30.0 (34.6%)
+
+Γ£ô Quality Assurance - Quality & Compliance
+  KR: 'Maintain 99.5% quality score' ΓåÆ 13.44/30.0 (44.8%)
+  KR: 'Complete 100% compliance audits' ΓåÆ 13.44/30.0 (44.8%)
+  KR: 'Reduce rework by 30%' ΓåÆ 13.44/30.0 (44.8%)
+
+Γ£ô Maintenance & Engineering - Reliability & Maintenance
+  KR: 'Achieve 96% equipment uptime' ΓåÆ 57.66/95.0 (60.7%)
+  KR: 'Reduce maintenance costs by 20%' ΓåÆ 18.21/30.0 (60.7%)
+  KR: 'Complete preventive maintenance 100%' ΓåÆ 18.21/30.0 (60.7%)
+
+Γ£ô Administration - Operations
+  KR: 'Achieve all department targets' ΓåÆ 10.26/95.0 (10.8%)
+  KR: 'Maintain 100% compliance' ΓåÆ 3.24/30.0 (10.8%)
+
+Γ£ô Human Resources - Operations
+  KR: 'Achieve all department targets' ΓåÆ 15.77/95.0 (16.6%)
+  KR: 'Maintain 100% compliance' ΓåÆ 4.98/30.0 (16.6%)
+
+Γ£ô Production - Output & Efficiency Targets
+  KR: 'Achieve 95% capacity utilization' ΓåÆ 33.53/95.0 (35.3%)
+  KR: 'Reduce downtime to <5%' ΓåÆ 10.59/30.0 (35.3%)
+  KR: 'Improve yield by 8%' ΓåÆ 10.59/30.0 (35.3%)
+
+Γ£ô Quality Assurance - Quality & Compliance
+  KR: 'Maintain 99.5% quality score' ΓåÆ 19.74/30.0 (65.8%)
+  KR: 'Complete 100% compliance audits' ΓåÆ 19.74/30.0 (65.8%)
+  KR: 'Reduce rework by 30%' ΓåÆ 19.74/30.0 (65.8%)
+
+Γ£ô Maintenance & Engineering - Reliability & Maintenance
+  KR: 'Achieve 96% equipment uptime' ΓåÆ 3.23/95.0 (3.4%)
+  KR: 'Reduce maintenance costs by 20%' ΓåÆ 1.02/30.0 (3.4%)
+  KR: 'Complete preventive maintenance 100%' ΓåÆ 1.02/30.0 (3.4%)
+
+Γ£ô Administration - Operations
+  KR: 'Achieve all department targets' ΓåÆ 49.59/95.0 (52.2%)
+  KR: 'Maintain 100% compliance' ΓåÆ 15.66/30.0 (52.2%)
+
+Γ£ô Human Resources - Operations
+  KR: 'Achieve all department targets' ΓåÆ 50.83/95.0 (53.5%)
+  KR: 'Maintain 100% compliance' ΓåÆ 16.05/30.0 (53.5%)
+
+Γ£ô Production - Output & Efficiency Targets
+  KR: 'Achieve 95% capacity utilization' ΓåÆ 31.25/95.0 (32.9%)
+  KR: 'Reduce downtime to <5%' ΓåÆ 9.87/30.0 (32.9%)
+  KR: 'Improve yield by 8%' ΓåÆ 9.87/30.0 (32.9%)
+
+Γ£ô Quality Assurance - Quality & Compliance
+  KR: 'Maintain 99.5% quality score' ΓåÆ 26.64/30.0 (88.8%)
+  KR: 'Complete 100% compliance audits' ΓåÆ 26.64/30.0 (88.8%)
+  KR: 'Reduce rework by 30%' ΓåÆ 26.64/30.0 (88.8%)
+
+Γ£ô Maintenance & Engineering - Reliability & Maintenance
+  KR: 'Achieve 96% equipment uptime' ΓåÆ 89.87/95.0 (94.6%)
+  KR: 'Reduce maintenance costs by 20%' ΓåÆ 28.38/30.0 (94.6%)
+  KR: 'Complete preventive maintenance 100%' ΓåÆ 28.38/30.0 (94.6%)
+
+Γ£ô Administration - Operations
+  KR: 'Achieve all department targets' ΓåÆ 85.59/95.0 (90.1%)
+  KR: 'Maintain 100% compliance' ΓåÆ 27.03/30.0 (90.1%)
+
+Γ£ô Human Resources - Operations
+  KR: 'Achieve all department targets' ΓåÆ 18.62/95.0 (19.6%)
+  KR: 'Maintain 100% compliance' ΓåÆ 5.88/30.0 (19.6%)
+
+Γ£ô Production - Output & Efficiency Targets
+  KR: 'Achieve 95% capacity utilization' ΓåÆ 23.46/95.0 (24.7%)
+  KR: 'Reduce downtime to <5%' ΓåÆ 7.41/30.0 (24.7%)
+  KR: 'Improve yield by 8%' ΓåÆ 7.41/30.0 (24.7%)
+
+Γ£ô Quality Assurance - Quality & Compliance
+  KR: 'Maintain 99.5% quality score' ΓåÆ 25.77/30.0 (85.9%)
+  KR: 'Complete 100% compliance audits' ΓåÆ 25.77/30.0 (85.9%)
+  KR: 'Reduce rework by 30%' ΓåÆ 25.77/30.0 (85.9%)
+
+Γ£ô Maintenance & Engineering - Reliability & Maintenance
+  KR: 'Achieve 96% equipment uptime' ΓåÆ 72.01/95.0 (75.8%)
+  KR: 'Reduce maintenance costs by 20%' ΓåÆ 22.74/30.0 (75.8%)
+  KR: 'Complete preventive maintenance 100%' ΓåÆ 22.74/30.0 (75.8%)
+
+Γ£ô Administration - Operations
+  KR: 'Achieve all department targets' ΓåÆ 94.33/95.0 (99.3%)
+  KR: 'Maintain 100% compliance' ΓåÆ 29.79/30.0 (99.3%)
+
+Γ£ô Human Resources - Operations
+  KR: 'Achieve all department targets' ΓåÆ 86.26/95.0 (90.8%)
+  KR: 'Maintain 100% compliance' ΓåÆ 27.24/30.0 (90.8%)
+
+ΓåÆ Updated 40 DEPARTMENT OKRs
+
+======================================================================
+UPDATING TEAM LEVEL OKRs
+======================================================================
+Found 88 OKRs at TEAM level
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 71.5/100.0 (71.5%)
+  KR: 'Maintain team safety record' ΓåÆ 71.5/100.0 (71.5%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 69.9/100.0 (69.9%)
+  KR: 'Maintain team safety record' ΓåÆ 69.9/100.0 (69.9%)
+
+Γ£ô Team-3 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 42.7/100.0 (42.7%)
+  KR: 'Maintain team safety record' ΓåÆ 42.7/100.0 (42.7%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 76.1/100.0 (76.1%)
+  KR: 'Maintain team safety record' ΓåÆ 76.1/100.0 (76.1%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 37.3/100.0 (37.3%)
+  KR: 'Maintain team safety record' ΓåÆ 37.3/100.0 (37.3%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 24.1/100.0 (24.1%)
+  KR: 'Maintain team safety record' ΓåÆ 24.1/100.0 (24.1%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 77.3/100.0 (77.3%)
+  KR: 'Maintain team safety record' ΓåÆ 77.3/100.0 (77.3%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 54.9/100.0 (54.9%)
+  KR: 'Maintain team safety record' ΓåÆ 54.9/100.0 (54.9%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 97.9/100.0 (97.9%)
+  KR: 'Maintain team safety record' ΓåÆ 97.9/100.0 (97.9%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 94.3/100.0 (94.3%)
+  KR: 'Maintain team safety record' ΓåÆ 94.3/100.0 (94.3%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 30.4/100.0 (30.4%)
+  KR: 'Maintain team safety record' ΓåÆ 30.4/100.0 (30.4%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 93.7/100.0 (93.7%)
+  KR: 'Maintain team safety record' ΓåÆ 93.7/100.0 (93.7%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 19.5/100.0 (19.5%)
+  KR: 'Maintain team safety record' ΓåÆ 19.5/100.0 (19.5%)
+
+Γ£ô Team-3 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 40.4/100.0 (40.4%)
+  KR: 'Maintain team safety record' ΓåÆ 40.4/100.0 (40.4%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 3.8/100.0 (3.8%)
+  KR: 'Maintain team safety record' ΓåÆ 3.8/100.0 (3.8%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 59.8/100.0 (59.8%)
+  KR: 'Maintain team safety record' ΓåÆ 59.8/100.0 (59.8%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 98.5/100.0 (98.5%)
+  KR: 'Maintain team safety record' ΓåÆ 98.5/100.0 (98.5%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 30.9/100.0 (30.9%)
+  KR: 'Maintain team safety record' ΓåÆ 30.9/100.0 (30.9%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 95.7/100.0 (95.7%)
+  KR: 'Maintain team safety record' ΓåÆ 95.7/100.0 (95.7%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 58.4/100.0 (58.4%)
+  KR: 'Maintain team safety record' ΓåÆ 58.4/100.0 (58.4%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 6.1/100.0 (6.1%)
+  KR: 'Maintain team safety record' ΓåÆ 6.1/100.0 (6.1%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 17.8/100.0 (17.8%)
+  KR: 'Maintain team safety record' ΓåÆ 17.8/100.0 (17.8%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 74.4/100.0 (74.4%)
+  KR: 'Maintain team safety record' ΓåÆ 74.4/100.0 (74.4%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 79.3/100.0 (79.3%)
+  KR: 'Maintain team safety record' ΓåÆ 79.3/100.0 (79.3%)
+
+Γ£ô Team-3 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 67.1/100.0 (67.1%)
+  KR: 'Maintain team safety record' ΓåÆ 67.1/100.0 (67.1%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 95.9/100.0 (95.9%)
+  KR: 'Maintain team safety record' ΓåÆ 95.9/100.0 (95.9%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 95.7/100.0 (95.7%)
+  KR: 'Maintain team safety record' ΓåÆ 95.7/100.0 (95.7%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 88.6/100.0 (88.6%)
+  KR: 'Maintain team safety record' ΓåÆ 88.6/100.0 (88.6%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 98.3/100.0 (98.3%)
+  KR: 'Maintain team safety record' ΓåÆ 98.3/100.0 (98.3%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 56.3/100.0 (56.3%)
+  KR: 'Maintain team safety record' ΓåÆ 56.3/100.0 (56.3%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 58.2/100.0 (58.2%)
+  KR: 'Maintain team safety record' ΓåÆ 58.2/100.0 (58.2%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 51.5/100.0 (51.5%)
+  KR: 'Maintain team safety record' ΓåÆ 51.5/100.0 (51.5%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 98.9/100.0 (98.9%)
+  KR: 'Maintain team safety record' ΓåÆ 98.9/100.0 (98.9%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 87.2/100.0 (87.2%)
+  KR: 'Maintain team safety record' ΓåÆ 87.2/100.0 (87.2%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 85.0/100.0 (85.0%)
+  KR: 'Maintain team safety record' ΓåÆ 85.0/100.0 (85.0%)
+
+Γ£ô Team-3 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 41.4/100.0 (41.4%)
+  KR: 'Maintain team safety record' ΓåÆ 41.4/100.0 (41.4%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 18.3/100.0 (18.3%)
+  KR: 'Maintain team safety record' ΓåÆ 18.3/100.0 (18.3%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 41.6/100.0 (41.6%)
+  KR: 'Maintain team safety record' ΓåÆ 41.6/100.0 (41.6%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 71.9/100.0 (71.9%)
+  KR: 'Maintain team safety record' ΓåÆ 71.9/100.0 (71.9%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 36.9/100.0 (36.9%)
+  KR: 'Maintain team safety record' ΓåÆ 36.9/100.0 (36.9%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 61.5/100.0 (61.5%)
+  KR: 'Maintain team safety record' ΓåÆ 61.5/100.0 (61.5%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 24.7/100.0 (24.7%)
+  KR: 'Maintain team safety record' ΓåÆ 24.7/100.0 (24.7%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 13.2/100.0 (13.2%)
+  KR: 'Maintain team safety record' ΓåÆ 13.2/100.0 (13.2%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 57.2/100.0 (57.2%)
+  KR: 'Maintain team safety record' ΓåÆ 57.2/100.0 (57.2%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 12.0/100.0 (12.0%)
+  KR: 'Maintain team safety record' ΓåÆ 12.0/100.0 (12.0%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 18.3/100.0 (18.3%)
+  KR: 'Maintain team safety record' ΓåÆ 18.3/100.0 (18.3%)
+
+Γ£ô Team-3 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 2.8/100.0 (2.8%)
+  KR: 'Maintain team safety record' ΓåÆ 2.8/100.0 (2.8%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 50.7/100.0 (50.7%)
+  KR: 'Maintain team safety record' ΓåÆ 50.7/100.0 (50.7%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 44.7/100.0 (44.7%)
+  KR: 'Maintain team safety record' ΓåÆ 44.7/100.0 (44.7%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 69.9/100.0 (69.9%)
+  KR: 'Maintain team safety record' ΓåÆ 69.9/100.0 (69.9%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 93.2/100.0 (93.2%)
+  KR: 'Maintain team safety record' ΓåÆ 93.2/100.0 (93.2%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 92.3/100.0 (92.3%)
+  KR: 'Maintain team safety record' ΓåÆ 92.3/100.0 (92.3%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 56.3/100.0 (56.3%)
+  KR: 'Maintain team safety record' ΓåÆ 56.3/100.0 (56.3%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 32.7/100.0 (32.7%)
+  KR: 'Maintain team safety record' ΓåÆ 32.7/100.0 (32.7%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 23.1/100.0 (23.1%)
+  KR: 'Maintain team safety record' ΓåÆ 23.1/100.0 (23.1%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 71.6/100.0 (71.6%)
+  KR: 'Maintain team safety record' ΓåÆ 71.6/100.0 (71.6%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 52.8/100.0 (52.8%)
+  KR: 'Maintain team safety record' ΓåÆ 52.8/100.0 (52.8%)
+
+Γ£ô Team-3 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 98.0/100.0 (98.0%)
+  KR: 'Maintain team safety record' ΓåÆ 98.0/100.0 (98.0%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 95.2/100.0 (95.2%)
+  KR: 'Maintain team safety record' ΓåÆ 95.2/100.0 (95.2%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 17.7/100.0 (17.7%)
+  KR: 'Maintain team safety record' ΓåÆ 17.7/100.0 (17.7%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 41.9/100.0 (41.9%)
+  KR: 'Maintain team safety record' ΓåÆ 41.9/100.0 (41.9%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 60.1/100.0 (60.1%)
+  KR: 'Maintain team safety record' ΓåÆ 60.1/100.0 (60.1%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 8.7/100.0 (8.7%)
+  KR: 'Maintain team safety record' ΓåÆ 8.7/100.0 (8.7%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 56.8/100.0 (56.8%)
+  KR: 'Maintain team safety record' ΓåÆ 56.8/100.0 (56.8%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 24.2/100.0 (24.2%)
+  KR: 'Maintain team safety record' ΓåÆ 24.2/100.0 (24.2%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 62.1/100.0 (62.1%)
+  KR: 'Maintain team safety record' ΓåÆ 62.1/100.0 (62.1%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 41.8/100.0 (41.8%)
+  KR: 'Maintain team safety record' ΓåÆ 41.8/100.0 (41.8%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 91.3/100.0 (91.3%)
+  KR: 'Maintain team safety record' ΓåÆ 91.3/100.0 (91.3%)
+
+Γ£ô Team-3 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 95.0/100.0 (95.0%)
+  KR: 'Maintain team safety record' ΓåÆ 95.0/100.0 (95.0%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 99.2/100.0 (99.2%)
+  KR: 'Maintain team safety record' ΓåÆ 99.2/100.0 (99.2%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 93.7/100.0 (93.7%)
+  KR: 'Maintain team safety record' ΓåÆ 93.7/100.0 (93.7%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 96.9/100.0 (96.9%)
+  KR: 'Maintain team safety record' ΓåÆ 96.9/100.0 (96.9%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 46.0/100.0 (46.0%)
+  KR: 'Maintain team safety record' ΓåÆ 46.0/100.0 (46.0%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 45.2/100.0 (45.2%)
+  KR: 'Maintain team safety record' ΓåÆ 45.2/100.0 (45.2%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 21.8/100.0 (21.8%)
+  KR: 'Maintain team safety record' ΓåÆ 21.8/100.0 (21.8%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 94.0/100.0 (94.0%)
+  KR: 'Maintain team safety record' ΓåÆ 94.0/100.0 (94.0%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 99.5/100.0 (99.5%)
+  KR: 'Maintain team safety record' ΓåÆ 99.5/100.0 (99.5%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 96.8/100.0 (96.8%)
+  KR: 'Maintain team safety record' ΓåÆ 96.8/100.0 (96.8%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 90.8/100.0 (90.8%)
+  KR: 'Maintain team safety record' ΓåÆ 90.8/100.0 (90.8%)
+
+Γ£ô Team-3 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 87.8/100.0 (87.8%)
+  KR: 'Maintain team safety record' ΓåÆ 87.8/100.0 (87.8%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 21.3/100.0 (21.3%)
+  KR: 'Maintain team safety record' ΓåÆ 21.3/100.0 (21.3%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 75.8/100.0 (75.8%)
+  KR: 'Maintain team safety record' ΓåÆ 75.8/100.0 (75.8%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 69.6/100.0 (69.6%)
+  KR: 'Maintain team safety record' ΓåÆ 69.6/100.0 (69.6%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 95.5/100.0 (95.5%)
+  KR: 'Maintain team safety record' ΓåÆ 95.5/100.0 (95.5%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 71.5/100.0 (71.5%)
+  KR: 'Maintain team safety record' ΓåÆ 71.5/100.0 (71.5%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 55.5/100.0 (55.5%)
+  KR: 'Maintain team safety record' ΓåÆ 55.5/100.0 (55.5%)
+
+Γ£ô Team-1 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 85.3/100.0 (85.3%)
+  KR: 'Maintain team safety record' ΓåÆ 85.3/100.0 (85.3%)
+
+Γ£ô Team-2 Performance & Execution
+  KR: 'Achieve all assigned targets' ΓåÆ 58.1/100.0 (58.1%)
+  KR: 'Maintain team safety record' ΓåÆ 58.1/100.0 (58.1%)
+
+ΓåÆ Updated 88 TEAM OKRs
+
+======================================================================
+UPDATING INDIVIDUAL LEVEL OKRs
+======================================================================
+Found 200 OKRs at INDIVIDUAL level
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 92.5/100.0 (92.5%)
+  KR: 'Attend all safety trainings' ΓåÆ 92.5/100.0 (92.5%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 69.3/100.0 (69.3%)
+  KR: 'Attend all safety trainings' ΓåÆ 69.3/100.0 (69.3%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 55.4/100.0 (55.4%)
+  KR: 'Attend all safety trainings' ΓåÆ 55.4/100.0 (55.4%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 14.7/100.0 (14.7%)
+  KR: 'Attend all safety trainings' ΓåÆ 14.7/100.0 (14.7%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 11.7/100.0 (11.7%)
+  KR: 'Attend all safety trainings' ΓåÆ 11.7/100.0 (11.7%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 22.2/100.0 (22.2%)
+  KR: 'Attend all safety trainings' ΓåÆ 22.2/100.0 (22.2%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 22.5/100.0 (22.5%)
+  KR: 'Attend all safety trainings' ΓåÆ 22.5/100.0 (22.5%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 62.0/100.0 (62.0%)
+  KR: 'Attend all safety trainings' ΓåÆ 62.0/100.0 (62.0%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 92.7/100.0 (92.7%)
+  KR: 'Attend all safety trainings' ΓåÆ 92.7/100.0 (92.7%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 18.3/100.0 (18.3%)
+  KR: 'Attend all safety trainings' ΓåÆ 18.3/100.0 (18.3%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 45.7/100.0 (45.7%)
+  KR: 'Attend all safety trainings' ΓåÆ 45.7/100.0 (45.7%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 79.3/100.0 (79.3%)
+  KR: 'Attend all safety trainings' ΓåÆ 79.3/100.0 (79.3%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 43.0/100.0 (43.0%)
+  KR: 'Attend all safety trainings' ΓåÆ 43.0/100.0 (43.0%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 77.9/100.0 (77.9%)
+  KR: 'Attend all safety trainings' ΓåÆ 77.9/100.0 (77.9%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 78.0/100.0 (78.0%)
+  KR: 'Attend all safety trainings' ΓåÆ 78.0/100.0 (78.0%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 41.1/100.0 (41.1%)
+  KR: 'Attend all safety trainings' ΓåÆ 41.1/100.0 (41.1%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 69.7/100.0 (69.7%)
+  KR: 'Attend all safety trainings' ΓåÆ 69.7/100.0 (69.7%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 48.4/100.0 (48.4%)
+  KR: 'Attend all safety trainings' ΓåÆ 48.4/100.0 (48.4%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 71.2/100.0 (71.2%)
+  KR: 'Attend all safety trainings' ΓåÆ 71.2/100.0 (71.2%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 42.6/100.0 (42.6%)
+  KR: 'Attend all safety trainings' ΓåÆ 42.6/100.0 (42.6%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 44.6/100.0 (44.6%)
+  KR: 'Attend all safety trainings' ΓåÆ 44.6/100.0 (44.6%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 13.4/100.0 (13.4%)
+  KR: 'Attend all safety trainings' ΓåÆ 13.4/100.0 (13.4%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 77.6/100.0 (77.6%)
+  KR: 'Attend all safety trainings' ΓåÆ 77.6/100.0 (77.6%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 78.9/100.0 (78.9%)
+  KR: 'Attend all safety trainings' ΓåÆ 78.9/100.0 (78.9%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 71.7/100.0 (71.7%)
+  KR: 'Attend all safety trainings' ΓåÆ 71.7/100.0 (71.7%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 66.0/100.0 (66.0%)
+  KR: 'Attend all safety trainings' ΓåÆ 66.0/100.0 (66.0%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 48.5/100.0 (48.5%)
+  KR: 'Attend all safety trainings' ΓåÆ 48.5/100.0 (48.5%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 79.0/100.0 (79.0%)
+  KR: 'Attend all safety trainings' ΓåÆ 79.0/100.0 (79.0%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 39.5/100.0 (39.5%)
+  KR: 'Attend all safety trainings' ΓåÆ 39.5/100.0 (39.5%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 55.9/100.0 (55.9%)
+  KR: 'Attend all safety trainings' ΓåÆ 55.9/100.0 (55.9%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 72.7/100.0 (72.7%)
+  KR: 'Attend all safety trainings' ΓåÆ 72.7/100.0 (72.7%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 93.4/100.0 (93.4%)
+  KR: 'Attend all safety trainings' ΓåÆ 93.4/100.0 (93.4%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 15.1/100.0 (15.1%)
+  KR: 'Attend all safety trainings' ΓåÆ 15.1/100.0 (15.1%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 88.5/100.0 (88.5%)
+  KR: 'Attend all safety trainings' ΓåÆ 88.5/100.0 (88.5%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 91.3/100.0 (91.3%)
+  KR: 'Attend all safety trainings' ΓåÆ 91.3/100.0 (91.3%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 7.5/100.0 (7.5%)
+  KR: 'Attend all safety trainings' ΓåÆ 7.5/100.0 (7.5%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 14.1/100.0 (14.1%)
+  KR: 'Attend all safety trainings' ΓåÆ 14.1/100.0 (14.1%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 4.9/100.0 (4.9%)
+  KR: 'Attend all safety trainings' ΓåÆ 4.9/100.0 (4.9%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 60.7/100.0 (60.7%)
+  KR: 'Attend all safety trainings' ΓåÆ 60.7/100.0 (60.7%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 36.9/100.0 (36.9%)
+  KR: 'Attend all safety trainings' ΓåÆ 36.9/100.0 (36.9%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 96.2/100.0 (96.2%)
+  KR: 'Attend all safety trainings' ΓåÆ 96.2/100.0 (96.2%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 73.7/100.0 (73.7%)
+  KR: 'Attend all safety trainings' ΓåÆ 73.7/100.0 (73.7%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 88.0/100.0 (88.0%)
+  KR: 'Attend all safety trainings' ΓåÆ 88.0/100.0 (88.0%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 76.4/100.0 (76.4%)
+  KR: 'Attend all safety trainings' ΓåÆ 76.4/100.0 (76.4%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 88.3/100.0 (88.3%)
+  KR: 'Attend all safety trainings' ΓåÆ 88.3/100.0 (88.3%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 65.5/100.0 (65.5%)
+  KR: 'Attend all safety trainings' ΓåÆ 65.5/100.0 (65.5%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 71.7/100.0 (71.7%)
+  KR: 'Attend all safety trainings' ΓåÆ 71.7/100.0 (71.7%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 3.6/100.0 (3.6%)
+  KR: 'Attend all safety trainings' ΓåÆ 3.6/100.0 (3.6%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 78.0/100.0 (78.0%)
+  KR: 'Attend all safety trainings' ΓåÆ 78.0/100.0 (78.0%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 42.9/100.0 (42.9%)
+  KR: 'Attend all safety trainings' ΓåÆ 42.9/100.0 (42.9%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 25.3/100.0 (25.3%)
+  KR: 'Attend all safety trainings' ΓåÆ 25.3/100.0 (25.3%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 22.7/100.0 (22.7%)
+  KR: 'Attend all safety trainings' ΓåÆ 22.7/100.0 (22.7%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 9.9/100.0 (9.9%)
+  KR: 'Attend all safety trainings' ΓåÆ 9.9/100.0 (9.9%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 14.1/100.0 (14.1%)
+  KR: 'Attend all safety trainings' ΓåÆ 14.1/100.0 (14.1%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 51.9/100.0 (51.9%)
+  KR: 'Attend all safety trainings' ΓåÆ 51.9/100.0 (51.9%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 77.4/100.0 (77.4%)
+  KR: 'Attend all safety trainings' ΓåÆ 77.4/100.0 (77.4%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 76.5/100.0 (76.5%)
+  KR: 'Attend all safety trainings' ΓåÆ 76.5/100.0 (76.5%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 85.9/100.0 (85.9%)
+  KR: 'Attend all safety trainings' ΓåÆ 85.9/100.0 (85.9%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 92.9/100.0 (92.9%)
+  KR: 'Attend all safety trainings' ΓåÆ 92.9/100.0 (92.9%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 52.9/100.0 (52.9%)
+  KR: 'Attend all safety trainings' ΓåÆ 52.9/100.0 (52.9%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 36.1/100.0 (36.1%)
+  KR: 'Attend all safety trainings' ΓåÆ 36.1/100.0 (36.1%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 45.5/100.0 (45.5%)
+  KR: 'Attend all safety trainings' ΓåÆ 45.5/100.0 (45.5%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 93.0/100.0 (93.0%)
+  KR: 'Attend all safety trainings' ΓåÆ 93.0/100.0 (93.0%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 65.6/100.0 (65.6%)
+  KR: 'Attend all safety trainings' ΓåÆ 65.6/100.0 (65.6%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 64.1/100.0 (64.1%)
+  KR: 'Attend all safety trainings' ΓåÆ 64.1/100.0 (64.1%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 81.8/100.0 (81.8%)
+  KR: 'Attend all safety trainings' ΓåÆ 81.8/100.0 (81.8%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 98.6/100.0 (98.6%)
+  KR: 'Attend all safety trainings' ΓåÆ 98.6/100.0 (98.6%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 47.2/100.0 (47.2%)
+  KR: 'Attend all safety trainings' ΓåÆ 47.2/100.0 (47.2%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 26.8/100.0 (26.8%)
+  KR: 'Attend all safety trainings' ΓåÆ 26.8/100.0 (26.8%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 17.4/100.0 (17.4%)
+  KR: 'Attend all safety trainings' ΓåÆ 17.4/100.0 (17.4%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 65.7/100.0 (65.7%)
+  KR: 'Attend all safety trainings' ΓåÆ 65.7/100.0 (65.7%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 71.1/100.0 (71.1%)
+  KR: 'Attend all safety trainings' ΓåÆ 71.1/100.0 (71.1%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 52.9/100.0 (52.9%)
+  KR: 'Attend all safety trainings' ΓåÆ 52.9/100.0 (52.9%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 28.8/100.0 (28.8%)
+  KR: 'Attend all safety trainings' ΓåÆ 28.8/100.0 (28.8%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 38.8/100.0 (38.8%)
+  KR: 'Attend all safety trainings' ΓåÆ 38.8/100.0 (38.8%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 87.4/100.0 (87.4%)
+  KR: 'Attend all safety trainings' ΓåÆ 87.4/100.0 (87.4%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 74.6/100.0 (74.6%)
+  KR: 'Attend all safety trainings' ΓåÆ 74.6/100.0 (74.6%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 85.5/100.0 (85.5%)
+  KR: 'Attend all safety trainings' ΓåÆ 85.5/100.0 (85.5%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 65.0/100.0 (65.0%)
+  KR: 'Attend all safety trainings' ΓåÆ 65.0/100.0 (65.0%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 51.5/100.0 (51.5%)
+  KR: 'Attend all safety trainings' ΓåÆ 51.5/100.0 (51.5%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 95.7/100.0 (95.7%)
+  KR: 'Attend all safety trainings' ΓåÆ 95.7/100.0 (95.7%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 80.4/100.0 (80.4%)
+  KR: 'Attend all safety trainings' ΓåÆ 80.4/100.0 (80.4%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 45.8/100.0 (45.8%)
+  KR: 'Attend all safety trainings' ΓåÆ 45.8/100.0 (45.8%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 54.5/100.0 (54.5%)
+  KR: 'Attend all safety trainings' ΓåÆ 54.5/100.0 (54.5%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 7.0/100.0 (7.0%)
+  KR: 'Attend all safety trainings' ΓåÆ 7.0/100.0 (7.0%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 73.5/100.0 (73.5%)
+  KR: 'Attend all safety trainings' ΓåÆ 73.5/100.0 (73.5%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 68.3/100.0 (68.3%)
+  KR: 'Attend all safety trainings' ΓåÆ 68.3/100.0 (68.3%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 36.4/100.0 (36.4%)
+  KR: 'Attend all safety trainings' ΓåÆ 36.4/100.0 (36.4%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 42.8/100.0 (42.8%)
+  KR: 'Attend all safety trainings' ΓåÆ 42.8/100.0 (42.8%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 82.1/100.0 (82.1%)
+  KR: 'Attend all safety trainings' ΓåÆ 82.1/100.0 (82.1%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 70.7/100.0 (70.7%)
+  KR: 'Attend all safety trainings' ΓåÆ 70.7/100.0 (70.7%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 94.2/100.0 (94.2%)
+  KR: 'Attend all safety trainings' ΓåÆ 94.2/100.0 (94.2%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 47.2/100.0 (47.2%)
+  KR: 'Attend all safety trainings' ΓåÆ 47.2/100.0 (47.2%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 99.4/100.0 (99.4%)
+  KR: 'Attend all safety trainings' ΓåÆ 99.4/100.0 (99.4%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 58.9/100.0 (58.9%)
+  KR: 'Attend all safety trainings' ΓåÆ 58.9/100.0 (58.9%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 99.5/100.0 (99.5%)
+  KR: 'Attend all safety trainings' ΓåÆ 99.5/100.0 (99.5%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 14.3/100.0 (14.3%)
+  KR: 'Attend all safety trainings' ΓåÆ 14.3/100.0 (14.3%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 89.9/100.0 (89.9%)
+  KR: 'Attend all safety trainings' ΓåÆ 89.9/100.0 (89.9%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 16.0/100.0 (16.0%)
+  KR: 'Attend all safety trainings' ΓåÆ 16.0/100.0 (16.0%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 51.1/100.0 (51.1%)
+  KR: 'Attend all safety trainings' ΓåÆ 51.1/100.0 (51.1%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 96.2/100.0 (96.2%)
+  KR: 'Attend all safety trainings' ΓåÆ 96.2/100.0 (96.2%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 78.1/100.0 (78.1%)
+  KR: 'Attend all safety trainings' ΓåÆ 78.1/100.0 (78.1%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 81.3/100.0 (81.3%)
+  KR: 'Attend all safety trainings' ΓåÆ 81.3/100.0 (81.3%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 74.3/100.0 (74.3%)
+  KR: 'Attend all safety trainings' ΓåÆ 74.3/100.0 (74.3%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 70.0/100.0 (70.0%)
+  KR: 'Attend all safety trainings' ΓåÆ 70.0/100.0 (70.0%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 62.6/100.0 (62.6%)
+  KR: 'Attend all safety trainings' ΓåÆ 62.6/100.0 (62.6%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 87.9/100.0 (87.9%)
+  KR: 'Attend all safety trainings' ΓåÆ 87.9/100.0 (87.9%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 89.1/100.0 (89.1%)
+  KR: 'Attend all safety trainings' ΓåÆ 89.1/100.0 (89.1%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 85.2/100.0 (85.2%)
+  KR: 'Attend all safety trainings' ΓåÆ 85.2/100.0 (85.2%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 76.7/100.0 (76.7%)
+  KR: 'Attend all safety trainings' ΓåÆ 76.7/100.0 (76.7%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 8.6/100.0 (8.6%)
+  KR: 'Attend all safety trainings' ΓåÆ 8.6/100.0 (8.6%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 63.7/100.0 (63.7%)
+  KR: 'Attend all safety trainings' ΓåÆ 63.7/100.0 (63.7%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 43.9/100.0 (43.9%)
+  KR: 'Attend all safety trainings' ΓåÆ 43.9/100.0 (43.9%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 6.4/100.0 (6.4%)
+  KR: 'Attend all safety trainings' ΓåÆ 6.4/100.0 (6.4%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 8.2/100.0 (8.2%)
+  KR: 'Attend all safety trainings' ΓåÆ 8.2/100.0 (8.2%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 11.6/100.0 (11.6%)
+  KR: 'Attend all safety trainings' ΓåÆ 11.6/100.0 (11.6%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 41.2/100.0 (41.2%)
+  KR: 'Attend all safety trainings' ΓåÆ 41.2/100.0 (41.2%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 46.8/100.0 (46.8%)
+  KR: 'Attend all safety trainings' ΓåÆ 46.8/100.0 (46.8%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 82.7/100.0 (82.7%)
+  KR: 'Attend all safety trainings' ΓåÆ 82.7/100.0 (82.7%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 47.1/100.0 (47.1%)
+  KR: 'Attend all safety trainings' ΓåÆ 47.1/100.0 (47.1%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 95.8/100.0 (95.8%)
+  KR: 'Attend all safety trainings' ΓåÆ 95.8/100.0 (95.8%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 31.2/100.0 (31.2%)
+  KR: 'Attend all safety trainings' ΓåÆ 31.2/100.0 (31.2%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 48.3/100.0 (48.3%)
+  KR: 'Attend all safety trainings' ΓåÆ 48.3/100.0 (48.3%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 15.1/100.0 (15.1%)
+  KR: 'Attend all safety trainings' ΓåÆ 15.1/100.0 (15.1%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 72.9/100.0 (72.9%)
+  KR: 'Attend all safety trainings' ΓåÆ 72.9/100.0 (72.9%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 43.8/100.0 (43.8%)
+  KR: 'Attend all safety trainings' ΓåÆ 43.8/100.0 (43.8%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 37.4/100.0 (37.4%)
+  KR: 'Attend all safety trainings' ΓåÆ 37.4/100.0 (37.4%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 83.5/100.0 (83.5%)
+  KR: 'Attend all safety trainings' ΓåÆ 83.5/100.0 (83.5%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 9.1/100.0 (9.1%)
+  KR: 'Attend all safety trainings' ΓåÆ 9.1/100.0 (9.1%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 39.9/100.0 (39.9%)
+  KR: 'Attend all safety trainings' ΓåÆ 39.9/100.0 (39.9%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 48.5/100.0 (48.5%)
+  KR: 'Attend all safety trainings' ΓåÆ 48.5/100.0 (48.5%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 81.0/100.0 (81.0%)
+  KR: 'Attend all safety trainings' ΓåÆ 81.0/100.0 (81.0%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 79.5/100.0 (79.5%)
+  KR: 'Attend all safety trainings' ΓåÆ 79.5/100.0 (79.5%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 89.1/100.0 (89.1%)
+  KR: 'Attend all safety trainings' ΓåÆ 89.1/100.0 (89.1%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 72.5/100.0 (72.5%)
+  KR: 'Attend all safety trainings' ΓåÆ 72.5/100.0 (72.5%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 81.8/100.0 (81.8%)
+  KR: 'Attend all safety trainings' ΓåÆ 81.8/100.0 (81.8%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 17.5/100.0 (17.5%)
+  KR: 'Attend all safety trainings' ΓåÆ 17.5/100.0 (17.5%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 94.6/100.0 (94.6%)
+  KR: 'Attend all safety trainings' ΓåÆ 94.6/100.0 (94.6%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 60.9/100.0 (60.9%)
+  KR: 'Attend all safety trainings' ΓåÆ 60.9/100.0 (60.9%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 69.9/100.0 (69.9%)
+  KR: 'Attend all safety trainings' ΓåÆ 69.9/100.0 (69.9%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 29.1/100.0 (29.1%)
+  KR: 'Attend all safety trainings' ΓåÆ 29.1/100.0 (29.1%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 47.4/100.0 (47.4%)
+  KR: 'Attend all safety trainings' ΓåÆ 47.4/100.0 (47.4%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 79.0/100.0 (79.0%)
+  KR: 'Attend all safety trainings' ΓåÆ 79.0/100.0 (79.0%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 92.7/100.0 (92.7%)
+  KR: 'Attend all safety trainings' ΓåÆ 92.7/100.0 (92.7%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 67.0/100.0 (67.0%)
+  KR: 'Attend all safety trainings' ΓåÆ 67.0/100.0 (67.0%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 27.7/100.0 (27.7%)
+  KR: 'Attend all safety trainings' ΓåÆ 27.7/100.0 (27.7%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 72.8/100.0 (72.8%)
+  KR: 'Attend all safety trainings' ΓåÆ 72.8/100.0 (72.8%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 63.3/100.0 (63.3%)
+  KR: 'Attend all safety trainings' ΓåÆ 63.3/100.0 (63.3%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 63.7/100.0 (63.7%)
+  KR: 'Attend all safety trainings' ΓåÆ 63.7/100.0 (63.7%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 60.7/100.0 (60.7%)
+  KR: 'Attend all safety trainings' ΓåÆ 60.7/100.0 (60.7%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 57.5/100.0 (57.5%)
+  KR: 'Attend all safety trainings' ΓåÆ 57.5/100.0 (57.5%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 33.4/100.0 (33.4%)
+  KR: 'Attend all safety trainings' ΓåÆ 33.4/100.0 (33.4%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 47.3/100.0 (47.3%)
+  KR: 'Attend all safety trainings' ΓåÆ 47.3/100.0 (47.3%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 56.0/100.0 (56.0%)
+  KR: 'Attend all safety trainings' ΓåÆ 56.0/100.0 (56.0%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 45.0/100.0 (45.0%)
+  KR: 'Attend all safety trainings' ΓåÆ 45.0/100.0 (45.0%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 76.5/100.0 (76.5%)
+  KR: 'Attend all safety trainings' ΓåÆ 76.5/100.0 (76.5%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 27.0/100.0 (27.0%)
+  KR: 'Attend all safety trainings' ΓåÆ 27.0/100.0 (27.0%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 64.9/100.0 (64.9%)
+  KR: 'Attend all safety trainings' ΓåÆ 64.9/100.0 (64.9%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 52.7/100.0 (52.7%)
+  KR: 'Attend all safety trainings' ΓåÆ 52.7/100.0 (52.7%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 58.3/100.0 (58.3%)
+  KR: 'Attend all safety trainings' ΓåÆ 58.3/100.0 (58.3%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 46.7/100.0 (46.7%)
+  KR: 'Attend all safety trainings' ΓåÆ 46.7/100.0 (46.7%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 60.8/100.0 (60.8%)
+  KR: 'Attend all safety trainings' ΓåÆ 60.8/100.0 (60.8%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 43.7/100.0 (43.7%)
+  KR: 'Attend all safety trainings' ΓåÆ 43.7/100.0 (43.7%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 55.3/100.0 (55.3%)
+  KR: 'Attend all safety trainings' ΓåÆ 55.3/100.0 (55.3%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 92.7/100.0 (92.7%)
+  KR: 'Attend all safety trainings' ΓåÆ 92.7/100.0 (92.7%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 70.2/100.0 (70.2%)
+  KR: 'Attend all safety trainings' ΓåÆ 70.2/100.0 (70.2%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 95.3/100.0 (95.3%)
+  KR: 'Attend all safety trainings' ΓåÆ 95.3/100.0 (95.3%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 70.4/100.0 (70.4%)
+  KR: 'Attend all safety trainings' ΓåÆ 70.4/100.0 (70.4%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 99.1/100.0 (99.1%)
+  KR: 'Attend all safety trainings' ΓåÆ 99.1/100.0 (99.1%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 84.4/100.0 (84.4%)
+  KR: 'Attend all safety trainings' ΓåÆ 84.4/100.0 (84.4%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 0.3/100.0 (0.3%)
+  KR: 'Attend all safety trainings' ΓåÆ 0.3/100.0 (0.3%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 81.8/100.0 (81.8%)
+  KR: 'Attend all safety trainings' ΓåÆ 81.8/100.0 (81.8%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 79.4/100.0 (79.4%)
+  KR: 'Attend all safety trainings' ΓåÆ 79.4/100.0 (79.4%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 99.2/100.0 (99.2%)
+  KR: 'Attend all safety trainings' ΓåÆ 99.2/100.0 (99.2%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 89.1/100.0 (89.1%)
+  KR: 'Attend all safety trainings' ΓåÆ 89.1/100.0 (89.1%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 57.2/100.0 (57.2%)
+  KR: 'Attend all safety trainings' ΓåÆ 57.2/100.0 (57.2%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 41.6/100.0 (41.6%)
+  KR: 'Attend all safety trainings' ΓåÆ 41.6/100.0 (41.6%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 41.5/100.0 (41.5%)
+  KR: 'Attend all safety trainings' ΓåÆ 41.5/100.0 (41.5%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 61.0/100.0 (61.0%)
+  KR: 'Attend all safety trainings' ΓåÆ 61.0/100.0 (61.0%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 74.7/100.0 (74.7%)
+  KR: 'Attend all safety trainings' ΓåÆ 74.7/100.0 (74.7%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 76.2/100.0 (76.2%)
+  KR: 'Attend all safety trainings' ΓåÆ 76.2/100.0 (76.2%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 43.9/100.0 (43.9%)
+  KR: 'Attend all safety trainings' ΓåÆ 43.9/100.0 (43.9%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 26.4/100.0 (26.4%)
+  KR: 'Attend all safety trainings' ΓåÆ 26.4/100.0 (26.4%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 88.0/100.0 (88.0%)
+  KR: 'Attend all safety trainings' ΓåÆ 88.0/100.0 (88.0%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 87.4/100.0 (87.4%)
+  KR: 'Attend all safety trainings' ΓåÆ 87.4/100.0 (87.4%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 43.0/100.0 (43.0%)
+  KR: 'Attend all safety trainings' ΓåÆ 43.0/100.0 (43.0%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 80.2/100.0 (80.2%)
+  KR: 'Attend all safety trainings' ΓåÆ 80.2/100.0 (80.2%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 86.5/100.0 (86.5%)
+  KR: 'Attend all safety trainings' ΓåÆ 86.5/100.0 (86.5%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 12.0/100.0 (12.0%)
+  KR: 'Attend all safety trainings' ΓåÆ 12.0/100.0 (12.0%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 37.4/100.0 (37.4%)
+  KR: 'Attend all safety trainings' ΓåÆ 37.4/100.0 (37.4%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 94.7/100.0 (94.7%)
+  KR: 'Attend all safety trainings' ΓåÆ 94.7/100.0 (94.7%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 31.7/100.0 (31.7%)
+  KR: 'Attend all safety trainings' ΓåÆ 31.7/100.0 (31.7%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 25.6/100.0 (25.6%)
+  KR: 'Attend all safety trainings' ΓåÆ 25.6/100.0 (25.6%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 43.9/100.0 (43.9%)
+  KR: 'Attend all safety trainings' ΓåÆ 43.9/100.0 (43.9%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 9.4/100.0 (9.4%)
+  KR: 'Attend all safety trainings' ΓåÆ 9.4/100.0 (9.4%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 8.5/100.0 (8.5%)
+  KR: 'Attend all safety trainings' ΓåÆ 8.5/100.0 (8.5%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 62.8/100.0 (62.8%)
+  KR: 'Attend all safety trainings' ΓåÆ 62.8/100.0 (62.8%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 81.2/100.0 (81.2%)
+  KR: 'Attend all safety trainings' ΓåÆ 81.2/100.0 (81.2%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 54.3/100.0 (54.3%)
+  KR: 'Attend all safety trainings' ΓåÆ 54.3/100.0 (54.3%)
+
+Γ£ô Individual Performance & Development
+  KR: 'Complete assigned tasks on time' ΓåÆ 1.9/100.0 (1.9%)
+  KR: 'Attend all safety trainings' ΓåÆ 1.9/100.0 (1.9%)
+
+ΓåÆ Updated 200 INDIVIDUAL OKRs
+
+======================================================================
+PROPAGATING PROGRESS UPWARD
+======================================================================
+
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+Γ£ô Propagated from 'Individual Performance & Development'
+
+Γ£ô All changes committed to database
+
+======================================================================
+SUMMARY
+======================================================================
+Total OKRs Updated: 337
+  ORGANIZATION: 1
+  PLANT: 8
+  DEPARTMENT: 40
+  TEAM: 88
+  INDIVIDUAL: 200
+
+Γ£ô No errors - all updates completed successfully!

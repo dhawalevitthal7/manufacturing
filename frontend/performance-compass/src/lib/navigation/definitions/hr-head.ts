@@ -27,5 +27,6 @@ export const HR_HEAD_NAV: NavDefinition[] = [
   { group: "HR & reviews", label: "Review Completion Status", to: "/reviews?view=completion", icon: ListChecks, roles: [HR] },
   { group: "HR & reviews", label: "Escalation Analytics", to: "/blockers", icon: AlertTriangle, roles: [HR] },
   { group: "HR & reviews", label: "Employee Directory", to: "/employees", icon: Users, roles: [HR] },
+  { group: "HR & reviews", label: "Functional Approvals", to: "/approvals?stage=functional", icon: ListChecks, roles: [HR] },
   { group: "HR & reviews", label: "Review Workflows", to: "/reviews?view=workflows", icon: Workflow, roles: [HR] },
 ];

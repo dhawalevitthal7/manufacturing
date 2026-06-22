@@ -14,6 +14,7 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ReviewsRouteImport } from './routes/reviews'
 import { Route as ProgressRouteImport } from './routes/progress'
 import { Route as PermissionsRouteImport } from './routes/permissions'
+import { Route as OrgTreeRouteImport } from './routes/org-tree'
 import { Route as OkrsRouteImport } from './routes/okrs'
 import { Route as HierarchyRouteImport } from './routes/hierarchy'
 import { Route as EmployeesRouteImport } from './routes/employees'
@@ -25,6 +26,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthRegisterRouteImport } from './routes/auth/register'
 import { Route as AuthLoginRouteImport } from './routes/auth/login'
 import { Route as Auth_layoutRouteImport } from './routes/auth/__layout'
+import { Route as AdminOkrOverridesRouteImport } from './routes/admin/okr-overrides'
 
 const TeamsRoute = TeamsRouteImport.update({
   id: '/teams',
@@ -49,6 +51,11 @@ const ProgressRoute = ProgressRouteImport.update({
 const PermissionsRoute = PermissionsRouteImport.update({
   id: '/permissions',
   path: '/permissions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrgTreeRoute = OrgTreeRouteImport.update({
+  id: '/org-tree',
+  path: '/org-tree',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OkrsRoute = OkrsRouteImport.update({
@@ -106,6 +113,11 @@ const Auth_layoutRoute = Auth_layoutRouteImport.update({
   path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminOkrOverridesRoute = AdminOkrOverridesRouteImport.update({
+  id: '/admin/okr-overrides',
+  path: '/admin/okr-overrides',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -116,11 +128,13 @@ export interface FileRoutesByFullPath {
   '/employees': typeof EmployeesRoute
   '/hierarchy': typeof HierarchyRoute
   '/okrs': typeof OkrsRoute
+  '/org-tree': typeof OrgTreeRoute
   '/permissions': typeof PermissionsRoute
   '/progress': typeof ProgressRoute
   '/reviews': typeof ReviewsRoute
   '/settings': typeof SettingsRoute
   '/teams': typeof TeamsRoute
+  '/admin/okr-overrides': typeof AdminOkrOverridesRoute
   '/auth': typeof Auth_layoutRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/register': typeof AuthRegisterRoute
@@ -134,11 +148,13 @@ export interface FileRoutesByTo {
   '/employees': typeof EmployeesRoute
   '/hierarchy': typeof HierarchyRoute
   '/okrs': typeof OkrsRoute
+  '/org-tree': typeof OrgTreeRoute
   '/permissions': typeof PermissionsRoute
   '/progress': typeof ProgressRoute
   '/reviews': typeof ReviewsRoute
   '/settings': typeof SettingsRoute
   '/teams': typeof TeamsRoute
+  '/admin/okr-overrides': typeof AdminOkrOverridesRoute
   '/auth': typeof Auth_layoutRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/register': typeof AuthRegisterRoute
@@ -153,11 +169,13 @@ export interface FileRoutesById {
   '/employees': typeof EmployeesRoute
   '/hierarchy': typeof HierarchyRoute
   '/okrs': typeof OkrsRoute
+  '/org-tree': typeof OrgTreeRoute
   '/permissions': typeof PermissionsRoute
   '/progress': typeof ProgressRoute
   '/reviews': typeof ReviewsRoute
   '/settings': typeof SettingsRoute
   '/teams': typeof TeamsRoute
+  '/admin/okr-overrides': typeof AdminOkrOverridesRoute
   '/auth/__layout': typeof Auth_layoutRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/register': typeof AuthRegisterRoute
@@ -173,11 +191,13 @@ export interface FileRouteTypes {
     | '/employees'
     | '/hierarchy'
     | '/okrs'
+    | '/org-tree'
     | '/permissions'
     | '/progress'
     | '/reviews'
     | '/settings'
     | '/teams'
+    | '/admin/okr-overrides'
     | '/auth'
     | '/auth/login'
     | '/auth/register'
@@ -191,11 +211,13 @@ export interface FileRouteTypes {
     | '/employees'
     | '/hierarchy'
     | '/okrs'
+    | '/org-tree'
     | '/permissions'
     | '/progress'
     | '/reviews'
     | '/settings'
     | '/teams'
+    | '/admin/okr-overrides'
     | '/auth'
     | '/auth/login'
     | '/auth/register'
@@ -209,11 +231,13 @@ export interface FileRouteTypes {
     | '/employees'
     | '/hierarchy'
     | '/okrs'
+    | '/org-tree'
     | '/permissions'
     | '/progress'
     | '/reviews'
     | '/settings'
     | '/teams'
+    | '/admin/okr-overrides'
     | '/auth/__layout'
     | '/auth/login'
     | '/auth/register'
@@ -228,11 +252,13 @@ export interface RootRouteChildren {
   EmployeesRoute: typeof EmployeesRoute
   HierarchyRoute: typeof HierarchyRoute
   OkrsRoute: typeof OkrsRoute
+  OrgTreeRoute: typeof OrgTreeRoute
   PermissionsRoute: typeof PermissionsRoute
   ProgressRoute: typeof ProgressRoute
   ReviewsRoute: typeof ReviewsRoute
   SettingsRoute: typeof SettingsRoute
   TeamsRoute: typeof TeamsRoute
+  AdminOkrOverridesRoute: typeof AdminOkrOverridesRoute
   Auth_layoutRoute: typeof Auth_layoutRoute
   AuthLoginRoute: typeof AuthLoginRoute
   AuthRegisterRoute: typeof AuthRegisterRoute
@@ -273,6 +299,13 @@ declare module '@tanstack/react-router' {
       path: '/permissions'
       fullPath: '/permissions'
       preLoaderRoute: typeof PermissionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/org-tree': {
+      id: '/org-tree'
+      path: '/org-tree'
+      fullPath: '/org-tree'
+      preLoaderRoute: typeof OrgTreeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/okrs': {
@@ -352,6 +385,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof Auth_layoutRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/okr-overrides': {
+      id: '/admin/okr-overrides'
+      path: '/admin/okr-overrides'
+      fullPath: '/admin/okr-overrides'
+      preLoaderRoute: typeof AdminOkrOverridesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -364,11 +404,13 @@ const rootRouteChildren: RootRouteChildren = {
   EmployeesRoute: EmployeesRoute,
   HierarchyRoute: HierarchyRoute,
   OkrsRoute: OkrsRoute,
+  OrgTreeRoute: OrgTreeRoute,
   PermissionsRoute: PermissionsRoute,
   ProgressRoute: ProgressRoute,
   ReviewsRoute: ReviewsRoute,
   SettingsRoute: SettingsRoute,
   TeamsRoute: TeamsRoute,
+  AdminOkrOverridesRoute: AdminOkrOverridesRoute,
   Auth_layoutRoute: Auth_layoutRoute,
   AuthLoginRoute: AuthLoginRoute,
   AuthRegisterRoute: AuthRegisterRoute,

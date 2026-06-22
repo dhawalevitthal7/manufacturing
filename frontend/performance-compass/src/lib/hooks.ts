@@ -287,10 +287,20 @@ export function useDirectReports(uid: string) {
 // OKR HOOKS
 // ============================================================================
 
+export function useVisibilityScope() {
+  return useQuery({
+    queryKey: ["okr-visibility-scope"],
+    queryFn: () => api.getVisibilityScope(),
+    staleTime: 60_000,
+  });
+}
+
 export function useObjectives(params?: {
   owner_id?: string;
   level?: ObjectiveLevel;
   cycle_id?: string;
+  year?: number;
+  quarter?: string;
   plant_id?: string;
   department_id?: string;
   team_id?: string;
@@ -317,40 +327,45 @@ export function useObjective(objId: string) {
   });
 }
 
-export function useAlignmentTree(plantId?: string) {
+export function useAlignmentTree(plantId?: string, cycleId?: string) {
   return useQuery({
-    queryKey: ["alignment-tree", plantId],
-    queryFn: () => api.getAlignmentTree(plantId),
+    queryKey: ["alignment-tree", plantId, cycleId],
+    queryFn: () => api.getAlignmentTree(plantId, cycleId),
   });
 }
 
-export function useProgressSummary(plantId?: string) {
+export function useProgressSummary(options?: {
+  plantId?: string;
+  cycleId?: string;
+  year?: number;
+  quarter?: string;
+}) {
   return useQuery({
-    queryKey: ["progress-summary", plantId],
-    queryFn: () => api.getProgressSummary(plantId),
+    queryKey: ["progress-summary", options],
+    queryFn: () => api.getProgressSummary(options),
   });
 }
 
-export function useAllowedLevels(role?: string) {
+export function useAllowedLevels(role?: string, userId?: string) {
   return useQuery({
-    queryKey: ["allowed-levels", role],
-    queryFn: () => api.getAllowedLevels(role),
-    enabled: !!role,
+    queryKey: ["allowed-levels", role, userId],
+    queryFn: () => api.getAllowedLevels(role, userId),
+    enabled: !!role && !!userId,
   });
 }
 
-export function useParentOptions(level: string, plantId?: string, departmentId?: string) {
+export function useParentOptions(level: string, plantId?: string, departmentId?: string, cycleId?: string) {
   return useQuery({
-    queryKey: ["parent-options", level, plantId, departmentId],
-    queryFn: () => api.getParentOptions(level, plantId, departmentId),
+    queryKey: ["parent-options", level, plantId, departmentId, cycleId],
+    queryFn: () => api.getParentOptions(level, plantId, departmentId, cycleId),
     enabled: !!level,
   });
 }
 
-export function usePendingValidations(plantId?: string) {
+export function usePendingValidations(plantId?: string, cycleId?: string) {
   return useQuery({
-    queryKey: ["pending-validations", plantId],
-    queryFn: () => api.getPendingValidations(plantId),
+    queryKey: ["pending-validations", plantId, cycleId],
+    queryFn: () => api.getPendingValidations(plantId, cycleId),
   });
 }
 
@@ -422,8 +437,13 @@ export function useSubmitProgress(krId: string) {
 export function useValidateProgress() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ updateId, validation }: { updateId: string; validation: { status: string; validation_notes?: string } }) =>
-      api.validateProgress(updateId, validation),
+    mutationFn: ({
+      updateId,
+      validation,
+    }: {
+      updateId: string;
+      validation: import("@/lib/api").ProgressValidation;
+    }) => api.validateProgress(updateId, validation),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["objectives"] });
       queryClient.invalidateQueries({ queryKey: ["pending-validations"] });
@@ -469,6 +489,255 @@ export function useReview(reviewId: string) {
     queryKey: ["reviews", reviewId],
     queryFn: () => api.getReview(reviewId),
     enabled: !!reviewId,
+  });
+}
+
+// ============================================================================
+// CONTINUOUS CHECK-IN HOOKS
+// ============================================================================
+
+export function useSubmitCheckin() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ employeeId, checkin }: { employeeId: string; checkin: any }) =>
+      api.submitCheckin(employeeId, checkin),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["checkins"] });
+    },
+  });
+}
+
+export function useCheckin(checkinId: string) {
+  return useQuery({
+    queryKey: ["checkins", checkinId],
+    queryFn: () => api.getCheckin(checkinId),
+    enabled: !!checkinId,
+  });
+}
+
+export function useEmployeeCheckins(employeeId: string, limit?: number, offset?: number) {
+  return useQuery({
+    queryKey: ["employee-checkins", employeeId, limit, offset],
+    queryFn: () => api.getEmployeeCheckins(employeeId, limit, offset),
+    enabled: !!employeeId,
+  });
+}
+
+export function useProvideManagerCheckinResponse() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ checkinId, response }: { checkinId: string; response: any }) =>
+      api.provideManagerCheckinResponse(checkinId, response),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["checkins"] });
+    },
+  });
+}
+
+export function useTeamCheckins(managerId: string, week?: number) {
+  return useQuery({
+    queryKey: ["team-checkins", managerId, week],
+    queryFn: () => api.getTeamCheckins(managerId, week),
+    enabled: !!managerId,
+  });
+}
+
+// ============================================================================
+// ENHANCED PERFORMANCE REVIEW HOOKS
+// ============================================================================
+
+export function useCreatePerformanceReview() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ employeeId, cycleId }: { employeeId: string; cycleId: string }) =>
+      api.createPerformanceReview(employeeId, cycleId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["reviews"] });
+    },
+  });
+}
+
+export function usePerformanceReviews(params?: any) {
+  return useQuery({
+    queryKey: ["performance-reviews", params],
+    queryFn: () => api.getPerformanceReviews(params),
+  });
+}
+
+export function usePerformanceReview(reviewId: string) {
+  return useQuery({
+    queryKey: ["performance-reviews", reviewId],
+    queryFn: () => api.getPerformanceReview(reviewId),
+    enabled: !!reviewId,
+  });
+}
+
+export function useSubmitSelfReviewEnhanced() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ reviewId, review }: { reviewId: string; review: any }) =>
+      api.submitSelfReviewEnhanced(reviewId, review),
+    onSuccess: (_, { reviewId }) => {
+      queryClient.invalidateQueries({ queryKey: ["performance-reviews", reviewId] });
+    },
+  });
+}
+
+export function useSubmitManagerReviewEnhanced() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ reviewId, review }: { reviewId: string; review: any }) =>
+      api.submitManagerReviewEnhanced(reviewId, review),
+    onSuccess: (_, { reviewId }) => {
+      queryClient.invalidateQueries({ queryKey: ["performance-reviews", reviewId] });
+    },
+  });
+}
+
+export function useSubmitSkipLevelReviewEnhanced() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ reviewId, review }: { reviewId: string; review: any }) =>
+      api.submitSkipLevelReviewEnhanced(reviewId, review),
+    onSuccess: (_, { reviewId }) => {
+      queryClient.invalidateQueries({ queryKey: ["performance-reviews", reviewId] });
+    },
+  });
+}
+
+export function useFinalizeReview() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (reviewId: string) => api.finalizeReview(reviewId),
+    onSuccess: (_, reviewId) => {
+      queryClient.invalidateQueries({ queryKey: ["performance-reviews", reviewId] });
+    },
+  });
+}
+
+export function usePublishReview() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (reviewId: string) => api.publishReview(reviewId),
+    onSuccess: (_, reviewId) => {
+      queryClient.invalidateQueries({ queryKey: ["performance-reviews", reviewId] });
+    },
+  });
+}
+
+export function useReviewAuditTrail(reviewId: string) {
+  return useQuery({
+    queryKey: ["review-audit-trail", reviewId],
+    queryFn: () => api.getReviewAuditTrail(reviewId),
+    enabled: !!reviewId,
+  });
+}
+
+export function useReviewCalculation(reviewId: string) {
+  return useQuery({
+    queryKey: ["review-calculation", reviewId],
+    queryFn: () => api.getReviewCalculation(reviewId),
+    enabled: !!reviewId,
+  });
+}
+
+// ============================================================================
+// 360 FEEDBACK HOOKS
+// ============================================================================
+
+export function useFeedbackTemplates(feedbackType?: any) {
+  return useQuery({
+    queryKey: ["feedback-templates", feedbackType],
+    queryFn: () => api.getFeedbackTemplates(feedbackType),
+  });
+}
+
+export function useSubmitFeedbackResponse() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (feedback: any) => api.submitFeedbackResponse(feedback),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["feedback-responses"] });
+    },
+  });
+}
+
+export function useFeedbackResponses(reviewId: string) {
+  return useQuery({
+    queryKey: ["feedback-responses", reviewId],
+    queryFn: () => api.getFeedbackResponses(reviewId),
+    enabled: !!reviewId,
+  });
+}
+
+export function useFeedbackSynthesis(reviewId: string) {
+  return useQuery({
+    queryKey: ["feedback-synthesis", reviewId],
+    queryFn: () => api.getFeedbackSynthesis(reviewId),
+    enabled: !!reviewId,
+  });
+}
+
+// ============================================================================
+// COMPETENCY FRAMEWORK HOOKS
+// ============================================================================
+
+export function useCompetencyFrameworks(roleType?: string) {
+  return useQuery({
+    queryKey: ["competency-frameworks", roleType],
+    queryFn: () => api.getCompetencyFrameworks(roleType),
+  });
+}
+
+export function useCompetencies(frameworkId: string) {
+  return useQuery({
+    queryKey: ["competencies", frameworkId],
+    queryFn: () => api.getCompetencies(frameworkId),
+    enabled: !!frameworkId,
+  });
+}
+
+export function useSubmitCompetencyAssessment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ reviewId, assessments }: { reviewId: string; assessments: any[] }) =>
+      api.submitCompetencyAssessment(reviewId, assessments),
+    onSuccess: (_, { reviewId }) => {
+      queryClient.invalidateQueries({ queryKey: ["performance-reviews", reviewId] });
+    },
+  });
+}
+
+// ============================================================================
+// REVIEW DASHBOARD HOOKS
+// ============================================================================
+
+export function useEmployeeReviewDashboard(employeeId?: string) {
+  return useQuery({
+    queryKey: ["employee-review-dashboard", employeeId],
+    queryFn: () => api.getEmployeeReviewDashboard(employeeId),
+  });
+}
+
+export function useManagerReviewDashboard(managerId?: string) {
+  return useQuery({
+    queryKey: ["manager-review-dashboard", managerId],
+    queryFn: () => api.getManagerReviewDashboard(managerId),
+  });
+}
+
+export function useDepartmentReviewDashboard(departmentId: string) {
+  return useQuery({
+    queryKey: ["department-review-dashboard", departmentId],
+    queryFn: () => api.getDepartmentReviewDashboard(departmentId),
+    enabled: !!departmentId,
+  });
+}
+
+export function useOrganizationReviewDashboard() {
+  return useQuery({
+    queryKey: ["organization-review-dashboard"],
+    queryFn: () => api.getOrganizationReviewDashboard(),
   });
 }
 

@@ -13,6 +13,8 @@ from server.auth import (
     require_super_admin_or_hr_head,
 )
 from server.services.audit_service import audit_super_admin_action, STRUCTURE_CREATE
+from server.services.org_tree_service import ensure_organization_root
+from server.services.onboard_scope import apply_onboard_hierarchy_scope
 from server.permissions_service import initialize_user_permissions, get_user_permission_profile
 from pydantic import BaseModel
 from typing import Optional
@@ -28,9 +30,11 @@ class OnboardEmployeeRequest(BaseModel):
     name: str
     password: str
     system_role: str = "EMPLOYEE"
+    region_id: str | None = None
     plant_id: str | None = None
     department_id: str | None = None
     team_id: str | None = None
+    designation_id: str | None = None
 
 
 @router.post("/onboard-employee", response_model=TokenResponse)
@@ -54,7 +58,6 @@ def onboard_employee(
     if existing:
         raise HTTPException(400, "Email already registered")
 
-    # Create new user in the same organization
     user = User(
         org_id=admin_user.org_id,
         email=req.email,
@@ -63,8 +66,17 @@ def onboard_employee(
         system_role=req.system_role,
         is_active=True,
         avatar_color=random.choice(AVATAR_COLORS),
+        designation_id=req.designation_id,
+    )
+    apply_onboard_hierarchy_scope(
+        user,
+        org_id=admin_user.org_id,
+        system_role=req.system_role,
+        region_id=req.region_id,
         plant_id=req.plant_id,
         department_id=req.department_id,
+        team_id=req.team_id,
+        db=db,
     )
     db.add(user)
     db.flush()
@@ -108,6 +120,8 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
     )
     db.add(org)
     db.flush()
+
+    ensure_organization_root(db, org.id, org.name)
 
     user = User(
         org_id=org.id,

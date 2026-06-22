@@ -11,6 +11,32 @@ def gen_uuid():
     return str(uuid.uuid4())
 
 
+# ===== CYCLES =====
+class CycleType(str, enum.Enum):
+    ANNUAL = "ANNUAL"
+    HALF_YEARLY = "HALF_YEARLY"
+    QUARTERLY = "QUARTERLY"
+    MONTHLY = "MONTHLY"
+
+class CycleStatus(str, enum.Enum):
+    PLANNED = "PLANNED"
+    ACTIVE = "ACTIVE"
+    FROZEN = "FROZEN"      # progress locked, review window open
+    CLOSED = "CLOSED"
+
+class Cycle(Base):
+    __tablename__ = "cycles"
+    id = Column(String, primary_key=True, default=gen_uuid)
+    org_id = Column(String, ForeignKey("organizations.id"), nullable=False)
+    name = Column(String, nullable=False)            # "Q1-2026", "FY26"
+    cycle_type = Column(String, nullable=False)
+    start_date = Column(String, nullable=False)
+    end_date = Column(String, nullable=False)
+    freeze_date = Column(String, nullable=False)       # after this, no progress edits
+    status = Column(String, default=CycleStatus.PLANNED.value)
+    applies_to_levels = Column(JSON, default=list)   # which depths use this cycle, e.g. [0,1,2]
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 # ===== TENANT ROOT =====
 class Organization(Base):
     __tablename__ = "organizations"
@@ -28,6 +54,7 @@ class NodeType(str, enum.Enum):
     """Types of nodes in the organization tree."""
     ORGANIZATION = "ORGANIZATION"
     REGION = "REGION"
+    CORPORATE_COMMITTEE = "CORPORATE_COMMITTEE"
     CORPORATE_FUNCTION = "CORPORATE_FUNCTION"
     PLANT = "PLANT"
     VERTICAL = "VERTICAL"  # sub-function under corp function
@@ -54,6 +81,12 @@ class OrgNode(Base):
     id = Column(String, primary_key=True, default=gen_uuid)
     org_id = Column(String, ForeignKey("organizations.id"), nullable=False, index=True)
     parent_id = Column(String, ForeignKey("org_nodes.id"), nullable=True, index=True)
+    functional_parent_id = Column(
+        String,
+        ForeignKey("org_nodes.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     node_type = Column(String, nullable=False, index=True)  # Enum value as string
     name = Column(String, nullable=False)
     code = Column(String, nullable=True)  # e.g., "PLT-RAJ-01", "FIN-001"
@@ -67,6 +100,11 @@ class OrgNode(Base):
 
     # Relationships
     parent = relationship("OrgNode", remote_side=[id], backref="children", foreign_keys=[parent_id])
+    functional_parent = relationship(
+        "OrgNode",
+        remote_side=[id],
+        foreign_keys=[functional_parent_id],
+    )
     head = relationship("User", foreign_keys=[head_user_id])
 
 
@@ -323,14 +361,20 @@ class Objective(Base):
     org_id = Column(String, ForeignKey("organizations.id"), nullable=False)
     owner_id = Column(String, ForeignKey("users.id"), nullable=False)
     parent_id = Column(String, ForeignKey("objectives.id"), nullable=True)
-    cycle_id = Column(String, ForeignKey("review_cycles.id"), nullable=True)
+    functional_parent_obj_id = Column(
+        String,
+        ForeignKey("objectives.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    cycle_id = Column(String, ForeignKey("cycles.id"), nullable=True)
     assigned_by_id = Column(String, ForeignKey("users.id"), nullable=True)
     title = Column(String, nullable=False)
     description = Column(Text)
-    level = Column(String, default="INDIVIDUAL")  # ORGANIZATION, PLANT, DEPARTMENT, TEAM, INDIVIDUAL
+    level = Column(String, default="INDIVIDUAL")  # ORGANIZATION, REGION, PLANT, DEPARTMENT, TEAM, INDIVIDUAL
     status = Column(String, default="ACTIVE")  # ACTIVE, COMPLETED, ARCHIVED
     progress = Column(Float, default=0.0)
     # Scope binding
+    region_id = Column(String, ForeignKey("org_nodes.id"), nullable=True)
     plant_id = Column(String, ForeignKey("plants.id"), nullable=True)
     department_id = Column(String, ForeignKey("departments.id"), nullable=True)
     team_id = Column(String, ForeignKey("teams.id"), nullable=True)
@@ -338,6 +382,11 @@ class Objective(Base):
     creation_approval_status = Column(String, default="PENDING")  # PENDING, APPROVED, REJECTED, REVISION_REQUESTED
     creation_approved_by_id = Column(String, ForeignKey("users.id"), nullable=True)
     creation_approved_at = Column(DateTime, nullable=True)
+    # Phase 4.4: dual creation-approval gates when functional_parent_obj_id is set (parallel tracks).
+    creation_primary_approved_by_id = Column(String, ForeignKey("users.id"), nullable=True)
+    creation_primary_approved_at = Column(DateTime, nullable=True)
+    creation_functional_approved_by_id = Column(String, ForeignKey("users.id"), nullable=True)
+    creation_functional_approved_at = Column(DateTime, nullable=True)
     creation_approval_notes = Column(Text)
     visibility_scope = Column(String, default="STANDARD")  # STANDARD, RESTRICTED, PUBLIC (for visibility control)
     allows_cascade = Column(Boolean, default=True)  # Whether this OKR can be parent for child OKRs
@@ -347,7 +396,33 @@ class Objective(Base):
     # AI-Assisted OKR Fields
     ai_generated = Column(Boolean, default=False)  # Whether this OKR was AI-suggested
     ai_metadata = Column(Text, nullable=True)  # JSON metadata from AI generation
-    okr_status = Column(String, default="DRAFT")  # DRAFT, PROPOSED, APPROVED, ACTIVE, COMPLETED, ARCHIVED
+    # Phase 6 lifecycle: DRAFT → PENDING_APPROVAL → ACTIVE | REJECTED | ACHIEVED | MISSED | ARCHIVED
+    okr_status = Column(String, default="DRAFT")
+    rejection_reason = Column(Text, nullable=True)
+    pending_approver_user_id = Column(String, ForeignKey("users.id"), nullable=True)
+    pending_approver_role = Column(String, nullable=True)
+    kr_baseline_locked = Column(Boolean, default=False)
+    function_area = Column(String, nullable=True, index=True)
+    function_node_id = Column(
+        String,
+        ForeignKey("org_nodes.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ObjectiveConnection(Base):
+    """Explicit cross-functional peer links between objectives (GetJop-style)."""
+
+    __tablename__ = "objective_connections"
+    id = Column(String, primary_key=True, default=gen_uuid)
+    org_id = Column(String, ForeignKey("organizations.id"), nullable=False, index=True)
+    objective_id_1 = Column(String, ForeignKey("objectives.id", ondelete="CASCADE"), nullable=False)
+    objective_id_2 = Column(String, ForeignKey("objectives.id", ondelete="CASCADE"), nullable=False)
+    connection_type = Column(String, nullable=False)  # SUPPORTS, DEPENDS_ON, RELATED_TO
+    cycle_id = Column(String, ForeignKey("cycles.id"), nullable=True)
+    created_by_id = Column(String, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -362,6 +437,27 @@ class KeyResult(Base):
     status = Column(String, default="NOT_STARTED")  # NOT_STARTED, IN_PROGRESS, COMPLETED
     weight = Column(Float, default=1.0)  # for weighted progress calculation
     created_at = Column(DateTime, default=datetime.utcnow)
+    ingest_source = relationship("KRIngestSource", back_populates="key_result", uselist=False)
+
+
+class KRIngestSource(Base):
+    """Phase 8: SCADA / MES / SAP webhook configuration for auto-updating a KR."""
+
+    __tablename__ = "kr_ingest_sources"
+    id = Column(String, primary_key=True, default=gen_uuid)
+    org_id = Column(String, ForeignKey("organizations.id"), nullable=False, index=True)
+    key_result_id = Column(String, ForeignKey("key_results.id"), nullable=False, unique=True, index=True)
+    source_system = Column(String, nullable=False)
+    source_metric_tag = Column(String, nullable=False, index=True)
+    transform_expr = Column(String, nullable=True)
+    api_token_hash = Column(String, nullable=False)
+    is_active = Column(Boolean, default=True)
+    last_ingest_at = Column(DateTime, nullable=True)
+    last_ingest_value = Column(Float, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    key_result = relationship("KeyResult", back_populates="ingest_source")
 
 
 class ProgressSubmission(Base):
@@ -397,6 +493,33 @@ class ProgressSubmission(Base):
     reviewed_at = Column(DateTime, nullable=True)
 
 
+class ApprovalStep(Base):
+    """
+    Ordered dual-approval chain for OKR creation and progress submissions.
+    Step 1 = line (Plant Head); step 2 = functional head (dotted-line).
+    """
+
+    __tablename__ = "approval_steps"
+    id = Column(String, primary_key=True, default=gen_uuid)
+    org_id = Column(String, ForeignKey("organizations.id"), nullable=False, index=True)
+    subject_type = Column(String, nullable=False, index=True)  # OKR_CREATION, PROGRESS_SUBMISSION
+    subject_id = Column(String, nullable=False, index=True)
+    sequence_order = Column(Integer, nullable=False, default=1)
+    approval_type = Column(String, nullable=False)  # LINE, FUNCTIONAL
+    approver_id = Column(String, ForeignKey("users.id"), nullable=True)
+    approver_role = Column(String, nullable=True)
+    status = Column(String, default="PENDING")  # PENDING, APPROVED, REJECTED, SKIPPED
+    decided_at = Column(DateTime, nullable=True)
+    comment = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    __table_args__ = (
+        UniqueConstraint(
+            "subject_type", "subject_id", "sequence_order", name="uq_approval_step_seq"
+        ),
+    )
+
+
 class ProgressUpdate(Base):
     """
     Legacy progress tracking. Kept for backward compatibility.
@@ -422,6 +545,8 @@ class ProgressUpdate(Base):
     # Auto-progress tracking
     auto_tracked = Column(Boolean, default=False)  # Whether progress was auto-updated by AI
     ai_coaching_notes = Column(Text, nullable=True)  # AI-generated coaching suggestions
+    progress_source = Column(String, default="MANUAL")  # MANUAL, AUTO_INGEST
+    is_manual_override = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     validated_at = Column(DateTime, nullable=True)
 

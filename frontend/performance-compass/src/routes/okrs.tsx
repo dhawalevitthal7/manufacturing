@@ -8,16 +8,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   AlertCircle, Loader2, Plus, Target, Factory, GitBranch, Users, User,
-  Building2, TrendingUp, CheckCircle2, AlertTriangle, XCircle,
+  Building2, Network, TrendingUp, CheckCircle2, AlertTriangle, XCircle,
 } from "lucide-react";
 import {
-  useObjectives, usePlants, useAllowedLevels,
+  useObjectives, usePlants, useAllowedLevels, useVisibilityScope,
   usePendingValidations, useDeleteObjective, useProgressSummary,
 } from "@/lib/hooks";
 import { useAuthStore } from "@/lib/stores/auth-store";
+import { usePeriodFilter } from "@/lib/hooks/use-period-filter";
 import { CreateOKRDialog } from "@/components/okr/create-okr-dialog";
 import { OKRCard } from "@/components/okr/okr-card";
 import { ValidationQueue } from "@/components/okr/validation-queue";
+import { OkrPendingApprovals } from "@/components/okr/okr-pending-approvals";
+import { canValidateOkrProgress } from "@/utils/okr-permissions";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
 import type { ObjectiveLevel } from "@/lib/api";
 
 export const Route = createFileRoute("/okrs")({
@@ -32,13 +37,30 @@ export const Route = createFileRoute("/okrs")({
 
 const LEVEL_ICONS: Record<string, React.ElementType> = {
   ORGANIZATION: Building2,
+  REGION: Network,
   PLANT: Factory,
   DEPARTMENT: GitBranch,
   TEAM: Users,
   INDIVIDUAL: User,
 };
 
-const LEVEL_ORDER: ObjectiveLevel[] = ["ORGANIZATION", "PLANT", "DEPARTMENT", "TEAM", "INDIVIDUAL"];
+const LEVEL_ORDER: ObjectiveLevel[] = [
+  "ORGANIZATION",
+  "REGION",
+  "PLANT",
+  "DEPARTMENT",
+  "TEAM",
+  "INDIVIDUAL",
+];
+
+const LEVEL_TAB_LABELS: Record<string, string> = {
+  ORGANIZATION: "Organization",
+  REGION: "Regional",
+  PLANT: "Plant",
+  DEPARTMENT: "Department",
+  TEAM: "Team",
+  INDIVIDUAL: "Individual",
+};
 
 function OKRsPage() {
   const { user } = useAuthStore();
@@ -47,49 +69,101 @@ function OKRsPage() {
   // Get level from URL search params
   const searchParams = Route.useSearch() as Record<string, string>;
   const urlLevel = searchParams.level?.toUpperCase() || "";
+  const urlView = searchParams.view || "";
 
   const [selectedPlantId, setSelectedPlantId] = useState<string>("");
-  const [activeTab, setActiveTab] = useState(urlLevel === "EMPLOYEE" ? "INDIVIDUAL" : (urlLevel || "all"));
+  const [activeTab, setActiveTab] = useState(
+    urlView === "validations" ? "validations" : 
+    (urlLevel === "EMPLOYEE" ? "INDIVIDUAL" : (urlLevel || "all"))
+  );
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [createLevel, setCreateLevel] = useState<ObjectiveLevel | undefined>();
 
   const { data: plants = [], isLoading: plantsLoading } = usePlants();
-  const { data: allowedLevelsData } = useAllowedLevels(role);
+  const { data: visibilityScope } = useVisibilityScope();
+  const { data: allowedLevelsData } = useAllowedLevels(role, user?.id);
   const allowedLevels = (allowedLevelsData?.allowed_levels || []) as ObjectiveLevel[];
 
-  const { data: progressSummary } = useProgressSummary(selectedPlantId || undefined);
-  const { data: pendingValidations = [] } = usePendingValidations(selectedPlantId || undefined);
+  const scopedPlants = useMemo(() => {
+    const all = plants as { id: string; name: string }[];
+    if (!visibilityScope || visibilityScope.unrestricted) return all;
+    if (visibilityScope.plant_ids?.length) {
+      const allowed = new Set(visibilityScope.plant_ids);
+      return all.filter((p) => allowed.has(p.id));
+    }
+    if (visibilityScope.plant_id) {
+      return all.filter((p) => p.id === visibilityScope.plant_id);
+    }
+    return [];
+  }, [plants, visibilityScope]);
 
-  // Fetch objectives for current tab
+  const showPlantFilter = scopedPlants.length > 1 || visibilityScope?.unrestricted;
+
+  const { year, quarter, cycleId } = usePeriodFilter();
+  const { data: progressSummary } = useProgressSummary({
+    plantId: selectedPlantId || undefined,
+    year,
+    quarter,
+    cycleId: cycleId || undefined,
+  });
+  const { data: pendingValidations = [] } = usePendingValidations(
+    selectedPlantId || undefined,
+    cycleId || undefined,
+  );
+
+  const canValidateProgress = canValidateOkrProgress(user);
+  const { data: pendingLifecycleOkrs = [] } = useQuery({
+    queryKey: ["pending-okr-approvals"],
+    queryFn: () => api.getPendingLifecycleApprovals(),
+    enabled: canValidateProgress,
+    refetchInterval: 30_000,
+  });
+  const pendingReviewCount = pendingValidations.length + pendingLifecycleOkrs.length;
+
+  // Fetch objectives for current tab — filtered by global year/quarter from top bar
   const levelFilter = activeTab !== "all" && activeTab !== "validations" ? activeTab : undefined;
   const { data: objectives, isLoading, error } = useObjectives({
     level: levelFilter as ObjectiveLevel | undefined,
     plant_id: selectedPlantId || undefined,
+    year,
+    quarter,
   });
 
   const deleteObj = useDeleteObjective();
 
-  // Check if user can manage (create/delete) OKRs
-  const canManage = allowedLevels.length > 0;
+  // Phase 6: anyone with allowed_levels (incl. self-draft INDIVIDUAL) can draft OKRs
+  const canDraft = allowedLevels.length > 0;
 
-  // Determine which tabs to show based on role
+  const visibleLevelSet = useMemo(() => {
+    if (visibilityScope?.visible_levels?.length) {
+      return new Set(visibilityScope.visible_levels);
+    }
+    return new Set(LEVEL_ORDER);
+  }, [visibilityScope]);
+
+  // Determine which tabs to show based on role + hierarchy visibility
   const visibleTabs = useMemo(() => {
     const tabs: { value: string; label: string; icon: React.ElementType }[] = [
       { value: "all", label: "All OKRs", icon: Target },
     ];
     for (const lvl of LEVEL_ORDER) {
+      if (!visibleLevelSet.has(lvl)) continue;
       tabs.push({
         value: lvl,
-        label: lvl === "INDIVIDUAL" ? "Individual" : lvl.charAt(0) + lvl.slice(1).toLowerCase(),
+        label: LEVEL_TAB_LABELS[lvl] || lvl,
         icon: LEVEL_ICONS[lvl] || Target,
       });
     }
-    // Add validation tab for managers
-    if (["SUPER_ADMIN", "CEO", "VP_OPERATIONS", "PLANT_HEAD", "PLANT_MANAGER", "DEPT_HEAD", "MANAGER", "TEAM_LEAD"].includes(role)) {
-      tabs.push({ value: "validations", label: `Validations (${pendingValidations.length})`, icon: CheckCircle2 });
+    // Progress / OKR approval queue for managers and regional heads
+    if (canValidateProgress) {
+      tabs.push({
+        value: "validations",
+        label: `Validations (${pendingReviewCount})`,
+        icon: CheckCircle2,
+      });
     }
     return tabs;
-  }, [role, pendingValidations.length]);
+  }, [role, canValidateProgress, pendingReviewCount, visibleLevelSet]);
 
   const handleCreateOKR = (level?: ObjectiveLevel) => {
     setCreateLevel(level || allowedLevels[0]);
@@ -123,37 +197,43 @@ function OKRsPage() {
             Objectives & Key Results
           </h2>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Cascading OKRs: Organization → Plant → Department → Team → Individual
+            Showing <strong>{quarter} {year}</strong> OKRs
+            {visibilityScope?.region_name
+              ? ` · scoped to ${visibilityScope.region_name}`
+              : " · Organization → Region → Plant → Department → Team → Individual"}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {/* Plant filter */}
-          <Select value={selectedPlantId || "__all__"} onValueChange={(v) => setSelectedPlantId(v === "__all__" ? "" : v)}>
-            <SelectTrigger className="w-[180px] h-9">
-              <Factory className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
-              <SelectValue placeholder="All Plants" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">All Plants</SelectItem>
-              {(plants as any[]).map((p: any) => (
-                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {/* Plant filter (in-scope plants only) */}
+          {showPlantFilter && (
+            <Select value={selectedPlantId || "__all__"} onValueChange={(v) => setSelectedPlantId(v === "__all__" ? "" : v)}>
+              <SelectTrigger className="w-[180px] h-9">
+                <Factory className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
+                <SelectValue placeholder="All Plants" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">All Plants</SelectItem>
+                {scopedPlants.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
 
           {/* Create button */}
-          {canManage && (
+          {canDraft && (
             <Button onClick={() => handleCreateOKR()} className="h-9">
-              <Plus className="h-4 w-4 mr-1" /> Create OKR
+              <Plus className="h-4 w-4 mr-1" /> Draft New OKR
             </Button>
           )}
         </div>
       </div>
 
-      {/* Progress Summary Cards */}
-      {progressSummary && (
-        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
-          {LEVEL_ORDER.map((lvl) => {
+      {/* Progress summary + validations card */}
+      {(progressSummary || canValidateProgress) && (
+        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
+          {progressSummary &&
+            LEVEL_ORDER.filter((lvl) => visibleLevelSet.has(lvl)).map((lvl) => {
             const data = (progressSummary as any)[lvl];
             if (!data || data.total === 0) return (
               <Card key={lvl} className="opacity-50">
@@ -191,6 +271,30 @@ function OKRsPage() {
               </Card>
             );
           })}
+          {canValidateProgress && (
+            <Card
+              key="validations"
+              className={`cursor-pointer transition-colors ${
+                activeTab === "validations"
+                  ? "border-primary ring-1 ring-primary/30"
+                  : pendingReviewCount > 0
+                    ? "border-amber-500/40 hover:border-amber-500/60"
+                    : "hover:border-primary/30"
+              }`}
+              onClick={() => setActiveTab("validations")}
+            >
+              <CardContent className="py-3 px-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <CheckCircle2 className={`h-4 w-4 ${pendingReviewCount > 0 ? "text-amber-500" : "text-primary"}`} />
+                  <p className="text-[10px] font-medium text-muted-foreground uppercase">Validations</p>
+                </div>
+                <p className="text-xl font-bold">{pendingReviewCount}</p>
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  {pendingValidations.length} progress · {pendingLifecycleOkrs.length} OKR approval
+                </p>
+              </CardContent>
+            </Card>
+          )}
         </div>
       )}
 
@@ -221,11 +325,16 @@ function OKRsPage() {
           <div className="mb-3">
             <h3 className="text-base font-semibold flex items-center gap-2">
               <CheckCircle2 className="h-4 w-4 text-amber-500" />
-              Progress Validation Queue
+              Progress & OKR approval queue
             </h3>
-            <p className="text-xs text-muted-foreground">Review and approve/reject employee progress submissions</p>
+            <p className="text-xs text-muted-foreground">
+              Review progress submissions from your region and approve OKRs routed to you.
+            </p>
           </div>
-          <ValidationQueue validations={pendingValidations} />
+          <div className="space-y-4">
+            <OkrPendingApprovals />
+            <ValidationQueue validations={pendingValidations} />
+          </div>
         </TabsContent>
 
         {/* OKR list tabs */}
@@ -243,7 +352,14 @@ function OKRsPage() {
             {objectives && objectives.length > 0 ? (
               <div className="space-y-3">
                 {objectives.map((okr) => (
-                  <OKRCard key={okr.id} objective={okr} canManage={canManage} onDelete={handleDeleteOKR} />
+                  <OKRCard
+                    key={okr.id}
+                    objective={okr}
+                    canManage={canDraft}
+                    onDelete={handleDeleteOKR}
+                    pendingValidations={pendingValidations}
+                    canValidateProgress={canValidateProgress}
+                  />
                 ))}
               </div>
             ) : (
@@ -255,11 +371,11 @@ function OKRsPage() {
                       {tabVal === "all" ? "No OKRs found" : `No ${tabVal.toLowerCase()} OKRs`}
                     </p>
                     <p className="text-sm text-muted-foreground/70 mt-1">
-                      {canManage ? "Create one to get started with cascading objectives." : "OKRs will appear here once created by your manager."}
+                      {canDraft ? "Draft an OKR to get started — it will go to your manager for approval." : "OKRs will appear here once created by your manager."}
                     </p>
-                    {canManage && allowedLevels.includes((tabVal === "all" ? allowedLevels[0] : tabVal) as ObjectiveLevel) && (
+                    {canDraft && allowedLevels.includes((tabVal === "all" ? allowedLevels[0] : tabVal) as ObjectiveLevel) && (
                       <Button variant="outline" className="mt-3" onClick={() => handleCreateOKR(tabVal === "all" ? undefined : tabVal as ObjectiveLevel)}>
-                        <Plus className="h-4 w-4 mr-1" /> Create OKR
+                        <Plus className="h-4 w-4 mr-1" /> Draft New OKR
                       </Button>
                     )}
                   </div>

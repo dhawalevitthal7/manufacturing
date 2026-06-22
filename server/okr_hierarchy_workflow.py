@@ -68,8 +68,9 @@ class OKRHierarchyWorkflow:
     # OKR creation levels: server.roles.can_create_objective_at_level (ROLE_TO_ALLOWED_OBJECTIVE_LEVELS).
     # SUPER_ADMIN removed from default approver routing (Phase 6 manual override).
     APPROVAL_ROLES_BY_LEVEL = {
-        "ORGANIZATION": ["CEO"],
-        "PLANT": ["PLANT_HEAD", "VP_OPERATIONS", "VP_MANUFACTURING"],
+        "ORGANIZATION": ["CEO", "CFO", "CMO", "CTO"],
+        "REGION": ["CRO", "CEO"],
+        "PLANT": ["COO", "CEO"],
         "DEPARTMENT": ["DEPT_HEAD", "PLANT_HEAD", "VP_OPERATIONS"],
         "TEAM": ["MANAGER", "DEPT_HEAD", "PLANT_HEAD"],
         "INDIVIDUAL": ["MANAGER", "TEAM_LEAD", "DEPT_HEAD", "PLANT_HEAD"],
@@ -116,13 +117,15 @@ class OKRHierarchyWorkflow:
         plant_id: Optional[str],
         department_id: Optional[str],
         team_id: Optional[str],
+        region_id: Optional[str] = None,
     ) -> Tuple[bool, str]:
         """
         Validate that OKR creation follows proper hierarchy chain.
         
         Rules:
         - ORGANIZATION OKRs have no parent
-        - PLANT OKRs can optionally link to ORGANIZATION parent
+        - REGION OKRs can optionally link to ORGANIZATION parent
+        - PLANT OKRs can optionally link to ORGANIZATION or REGION parent
         - DEPARTMENT OKRs must link to PLANT parent (directly or transitively)
         - TEAM OKRs must link to DEPARTMENT parent (directly or transitively)
         - INDIVIDUAL OKRs must link to TEAM parent (directly or transitively)
@@ -137,15 +140,28 @@ class OKRHierarchyWorkflow:
                 return False, "ORGANIZATION OKRs cannot be scoped to plant/department/team"
             return True, ""
 
+        # REGION OKRs
+        if okr_level == "REGION":
+            if not region_id:
+                return False, "REGION OKRs must specify a region_id"
+            if plant_id or department_id or team_id:
+                return False, "REGION OKRs cannot be scoped to plant/department/team"
+            if parent_okr and parent_okr.level.upper() != "ORGANIZATION":
+                return False, (
+                    f"REGION OKR parent must be ORGANIZATION level, "
+                    f"got {parent_okr.level}"
+                )
+            return True, ""
+
         # PLANT OKRs
         if okr_level == "PLANT":
             if not plant_id:
                 return False, "PLANT OKRs must specify a plant_id"
             if department_id or team_id:
                 return False, "PLANT OKRs cannot be scoped to department/team"
-            if parent_okr and parent_okr.level.upper() != "ORGANIZATION":
+            if parent_okr and parent_okr.level.upper() not in ("ORGANIZATION", "REGION"):
                 return False, (
-                    f"PLANT OKR parent must be ORGANIZATION level, "
+                    f"PLANT OKR parent must be ORGANIZATION or REGION level, "
                     f"got {parent_okr.level}"
                 )
             return True, ""
@@ -157,7 +173,7 @@ class OKRHierarchyWorkflow:
             if team_id:
                 return False, "DEPARTMENT OKRs cannot be scoped to team"
             if parent_okr:
-                valid_parent_levels = ["ORGANIZATION", "PLANT", "DEPARTMENT"]
+                valid_parent_levels = ["ORGANIZATION", "REGION", "PLANT", "DEPARTMENT"]
                 if parent_okr.level.upper() not in valid_parent_levels:
                     return False, (
                         f"DEPARTMENT OKR parent must be one of {valid_parent_levels}, "
@@ -223,6 +239,125 @@ class OKRHierarchyWorkflow:
             return True, ""
 
         return False, f"Invalid OKR level: {okr_level}"
+
+    def creation_alignment_track_for_approver(
+        self,
+        approver: User,
+        okr: Objective,
+        org_id: str,
+    ) -> Tuple[Optional[str], str]:
+        """
+        Phase 4.4: which creation-approval track(s) this approver may satisfy.
+
+        Primary uses ``can_approve_okr`` on this OKR. Functional uses the same check on the
+        functional-parent objective (same authority as approving that parent row).
+        Returns (\"primary\" | \"functional\" | \"both\", \"\") or (None, reason).
+        """
+        if okr.pending_approver_user_id and approver.id == okr.pending_approver_user_id:
+            return "primary", ""
+        primary_ok, pr = self.can_approve_okr(approver, okr, org_id)
+        fp = None
+        if okr.functional_parent_obj_id:
+            fp = (
+                self.db.query(Objective)
+                .filter(Objective.id == okr.functional_parent_obj_id)
+                .first()
+            )
+        if not fp:
+            if primary_ok:
+                return "primary", ""
+            return None, pr
+
+        fp_ok, fr = self.can_approve_okr(approver, fp, org_id)
+        if primary_ok and fp_ok:
+            return "both", ""
+        if primary_ok:
+            return "primary", pr
+        if fp_ok:
+            return "functional", fr
+        return None, pr or fr
+
+    def can_validate_progress_including_functional_alignment(
+        self,
+        validator: User,
+        okr: Objective,
+        submitter: User,
+    ) -> Tuple[bool, str]:
+        """
+        Phase 4.4: allow validators who sit on the functional-parent OKR's validation chain
+        to approve progress on this OKR (dual reporting).
+        """
+        ok, reason = self.can_validate_progress(validator, okr, submitter)
+        if ok:
+            return True, ""
+        if not okr.functional_parent_obj_id:
+            return False, reason
+        fp = (
+            self.db.query(Objective)
+            .filter(Objective.id == okr.functional_parent_obj_id)
+            .first()
+        )
+        if not fp:
+            return False, reason
+        ok2, reason2 = self.can_validate_progress(validator, fp, submitter)
+        if ok2:
+            return True, ""
+        return False, reason
+
+    def _approval_chain_rows_for_objective(
+        self,
+        okr: Objective,
+        org_id: str,
+        alignment: str,
+    ) -> List[Dict[str, Any]]:
+        """Build approval-chain user rows for one objective scope (primary or functional parent)."""
+        okr_level = okr.level.upper()
+        approving_roles = self.APPROVAL_ROLES_BY_LEVEL.get(okr_level, [])
+        chain: List[Dict[str, Any]] = []
+        for role in approving_roles:
+            if okr_level == "ORGANIZATION":
+                users = self.db.query(User).filter(
+                    User.system_role == role,
+                    User.org_id == org_id,
+                    User.is_active == True,
+                ).all()
+            elif okr_level == "PLANT" and okr.plant_id:
+                users = self.db.query(User).filter(
+                    User.system_role == role,
+                    User.plant_id == okr.plant_id,
+                    User.org_id == org_id,
+                    User.is_active == True,
+                ).all()
+            elif okr_level == "DEPARTMENT" and okr.department_id:
+                users = self.db.query(User).filter(
+                    User.system_role == role,
+                    User.department_id == okr.department_id,
+                    User.org_id == org_id,
+                    User.is_active == True,
+                ).all()
+            elif okr_level in ["TEAM", "INDIVIDUAL"] and okr.team_id:
+                users = self.db.query(User).filter(
+                    User.system_role == role,
+                    User.team_id == okr.team_id,
+                    User.org_id == org_id,
+                    User.is_active == True,
+                ).all()
+            else:
+                users = self.db.query(User).filter(
+                    User.system_role == role,
+                    User.org_id == org_id,
+                    User.is_active == True,
+                ).all()
+
+            for user in users:
+                chain.append({
+                    "role": role,
+                    "user_id": user.id,
+                    "user_name": user.name,
+                    "email": user.email,
+                    "alignment": alignment,
+                })
+        return chain
 
     # ────────────────────────────────────────────────────────────────────────────
     # ASSIGNMENT & CASCADING
@@ -418,6 +553,10 @@ class OKRHierarchyWorkflow:
         okr_level = okr.level.upper()
         approver_role = approver.system_role
 
+        # Resolved pending approver always may act on this OKR.
+        if okr.pending_approver_user_id and approver.id == okr.pending_approver_user_id:
+            return True, ""
+
         # Get list of roles that can approve this OKR level
         approving_roles = self.APPROVAL_ROLES_BY_LEVEL.get(okr_level, [])
 
@@ -428,11 +567,17 @@ class OKRHierarchyWorkflow:
             )
 
         # Verify approver is in the correct hierarchy scope
-        if okr_level == "PLANT":
+        if okr_level == "REGION":
+            if approver_role in ["CRO", "CEO", "SUPER_ADMIN"]:
+                return True, ""
+
+        elif okr_level == "PLANT":
+            if approver_role in ["COO", "CEO", "SUPER_ADMIN"]:
+                return True, ""
             if okr.plant_id and approver.plant_id != okr.plant_id:
-                if approver_role not in ["SUPER_ADMIN", "VP_OPERATIONS", "VP_MANUFACTURING", "CEO"]:
+                if approver_role not in ["VP_OPERATIONS", "VP_MANUFACTURING"]:
                     return False, (
-                        f"Approver must be in the same plant or have organization-wide authority"
+                        "Approver must be in the same plant or have organization-wide authority"
                     )
 
         elif okr_level == "DEPARTMENT":
@@ -469,6 +614,23 @@ class OKRHierarchyWorkflow:
         """
         validator_role = validator.system_role
         okr_level = okr.level.upper()
+        submitter_role = submitter.system_role if submitter else ""
+
+        # Plant Head submitting plant-level KR progress → COO validates
+        if okr_level == "PLANT" and submitter_role == "PLANT_HEAD":
+            if validator_role == "COO":
+                return True, ""
+            if validator_role in ("CEO", "SUPER_ADMIN"):
+                return True, ""
+            return False, "Plant Head plant-level progress must be validated by the COO"
+
+        # Regional Head submitting region-level KR progress → CRO validates
+        if okr_level == "REGION" and submitter_role == "REGIONAL_HEAD":
+            if validator_role == "CRO":
+                return True, ""
+            if validator_role in ("CEO", "SUPER_ADMIN"):
+                return True, ""
+            return False, "Regional Head region-level progress must be validated by the CRO"
 
         # Validators must be in management/review position
         if validator_role not in self.APPROVAL_ROLES_BY_LEVEL.get(okr_level, []):
@@ -529,8 +691,8 @@ class OKRHierarchyWorkflow:
         if user.system_role in ["SUPER_ADMIN", "CEO"]:
             return query.all()
 
-        # VP-level can see all OKRs (they manage multiple plants)
-        if user.system_role in ["VP_OPERATIONS", "VP_MANUFACTURING"]:
+        # VP-level, COO, CRO can see all OKRs (org-wide oversight)
+        if user.system_role in ["VP_OPERATIONS", "VP_MANUFACTURING", "COO", "CRO"]:
             return query.all()
 
         # Plant Head can see all OKRs in their plant
@@ -629,8 +791,18 @@ class OKRHierarchyWorkflow:
             if subordinate.plant_id and potential_superior.plant_id == subordinate.plant_id:
                 return potential_superior.system_role in ["PLANT_HEAD"]
 
-        # VP-level and above always superior
-        if potential_superior.system_role in ["VP_OPERATIONS", "VP_MANUFACTURING", "CEO", "SUPER_ADMIN"]:
+        # For PLANT OKRs, COO / CEO approve plant-head submissions
+        if okr_level == "PLANT":
+            if potential_superior.system_role in ["COO", "CEO", "VP_OPERATIONS", "VP_MANUFACTURING"]:
+                return True
+
+        # For REGION OKRs, CRO / CEO approve regional-head submissions
+        if okr_level == "REGION":
+            if potential_superior.system_role in ["CRO", "CEO", "CFO", "CMO", "CTO"]:
+                return True
+
+        # VP-level and above always superior for lower scopes
+        if potential_superior.system_role in ["VP_OPERATIONS", "VP_MANUFACTURING", "CEO", "SUPER_ADMIN", "COO", "CRO"]:
             return True
 
         return False
@@ -642,56 +814,21 @@ class OKRHierarchyWorkflow:
     ) -> List[Dict[str, Any]]:
         """
         Get the approval chain for an OKR showing who must approve it.
-        Returns list of roles/users who can approve at each stage.
+
+        Phase 4.4: each entry includes ``alignment`` — ``primary`` (solid hierarchy on this OKR)
+        or ``functional`` (approvers taken from the functional-parent objective's level/scope).
         """
-        okr_level = okr.level.upper()
-        approving_roles = self.APPROVAL_ROLES_BY_LEVEL.get(okr_level, [])
-
-        chain = []
-        for role in approving_roles:
-            # Get users with this role in relevant scope
-            if okr_level == "ORGANIZATION":
-                users = self.db.query(User).filter(
-                    User.system_role == role,
-                    User.org_id == org_id,
-                    User.is_active == True,
-                ).all()
-            elif okr_level == "PLANT" and okr.plant_id:
-                users = self.db.query(User).filter(
-                    User.system_role == role,
-                    User.plant_id == okr.plant_id,
-                    User.org_id == org_id,
-                    User.is_active == True,
-                ).all()
-            elif okr_level == "DEPARTMENT" and okr.department_id:
-                users = self.db.query(User).filter(
-                    User.system_role == role,
-                    User.department_id == okr.department_id,
-                    User.org_id == org_id,
-                    User.is_active == True,
-                ).all()
-            elif okr_level in ["TEAM", "INDIVIDUAL"] and okr.team_id:
-                users = self.db.query(User).filter(
-                    User.system_role == role,
-                    User.team_id == okr.team_id,
-                    User.org_id == org_id,
-                    User.is_active == True,
-                ).all()
-            else:
-                users = self.db.query(User).filter(
-                    User.system_role == role,
-                    User.org_id == org_id,
-                    User.is_active == True,
-                ).all()
-
-            for user in users:
-                chain.append({
-                    "role": role,
-                    "user_id": user.id,
-                    "user_name": user.name,
-                    "email": user.email,
-                })
-
+        chain = self._approval_chain_rows_for_objective(okr, org_id, "primary")
+        if okr.functional_parent_obj_id:
+            fp = (
+                self.db.query(Objective)
+                .filter(Objective.id == okr.functional_parent_obj_id)
+                .first()
+            )
+            if fp:
+                chain.extend(
+                    self._approval_chain_rows_for_objective(fp, org_id, "functional")
+                )
         return chain
 
     def get_suggested_parent_okr(

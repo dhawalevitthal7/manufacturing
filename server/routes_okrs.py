@@ -1,16 +1,32 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from typing import Optional, List
+from datetime import datetime
 import uuid
 from server.database import get_db
 from server.models import (
-    Objective, KeyResult, ProgressUpdate, User, ReviewCycle,
-    Team, Department, Plant, TeamMember,
+    Objective, KeyResult, ProgressUpdate, ProgressSubmission, User, ReviewCycle, KRIngestSource,
+    Team, Department, Plant, TeamMember, Cycle,
 )
+from server.auth import require_super_admin, get_jwt_payload
 from server.schemas import (
-    ObjectiveCreate, ObjectiveAssignCreate, KeyResultCreate, ProgressUpdateCreate,
+    ObjectiveCreate,
+    ObjectiveAssignCreate,
+    ObjectiveFunctionalParentPatch,
+    KeyResultCreate,
+    KRIngestSourceConfigure,
+    ProgressUpdateCreate,
     ProgressValidation,
+)
+from server.services.objective_functional_validation import (
+    reject_functional_parent_obj_id_in_create_body,
+    validate_functional_parent_objective,
+)
+from server.services.okr_progress_permissions import (
+    actor_may_assign_okr_to_user,
+    can_submit_okr_progress,
+    resolve_team_okr_owner_id,
 )
 from server.okr_cascade_service import (
     OKRCascadeService,
@@ -18,9 +34,99 @@ from server.okr_cascade_service import (
     calculate_kr_progress,
     score_to_rating,
 )
-from server.roles import allowed_objective_levels_for, normalize_role
+from server.roles import allowed_objective_levels_for, normalize_role, SystemRole
+from server.services.okr_visibility_service import (
+    apply_okr_visibility_filter,
+    apply_optional_scope_narrowing,
+    get_user_okr_scope,
+    visibility_scope_response,
+    get_functional_okrs,
+    get_function_structure,
+)
+from server.services.function_area_service import (
+    FUNCTION_AREAS,
+    FUNCTION_AREA_LABELS,
+    normalize_function_area,
+    resolve_function_area_on_create,
+    inherit_function_area_from_parent,
+)
+from server.services.okr_lifecycle_service import (
+    OKR_STATUS_ACTIVE,
+    OKR_STATUS_DRAFT,
+    activate_okr,
+    admin_approve_okr,
+    admin_reject_okr,
+    assert_okr_allows_kr_edit,
+    assert_okr_allows_progress,
+    can_user_draft_objective,
+    ceo_may_self_publish,
+    enqueue_okr_creation_approval,
+    publish_ceo_okr,
+    reject_okr,
+    submit_for_approval,
+)
+from server.services.dual_approval_service import (
+    SUBJECT_OKR_CREATION,
+    chain_status,
+    pending_subject_ids_for_approver,
+)
 
 router = APIRouter(prefix="/api/okrs", tags=["okrs"])
+
+
+def _resolve_cycle_id(db: Session, org_id: str, cycle_id: Optional[str]) -> Optional[str]:
+    """Use explicit cycle_id when provided; otherwise attach the org's active/frozen cycle."""
+    if cycle_id:
+        cycle = db.query(Cycle).filter(Cycle.id == cycle_id, Cycle.org_id == org_id).first()
+        if not cycle:
+            raise HTTPException(404, "Cycle not found")
+        return cycle_id
+    active = (
+        db.query(Cycle)
+        .filter(
+            Cycle.org_id == org_id,
+            Cycle.status.in_(("ACTIVE", "FROZEN")),
+        )
+        .order_by(Cycle.start_date.desc())
+        .first()
+    )
+    return active.id if active else None
+
+
+def _apply_objective_period_filter(
+    q,
+    *,
+    year: Optional[int] = None,
+    quarter: Optional[str] = None,
+    cycle_id: Optional[str] = None,
+):
+    """Filter OKRs by explicit year/quarter; fall back to cycle_id when period not set."""
+    if year is not None:
+        q = q.filter(Objective.year == year)
+    if quarter:
+        q = q.filter(Objective.quarter == quarter.upper())
+    elif cycle_id:
+        q = q.filter(Objective.cycle_id == cycle_id)
+    return q
+
+
+def _derive_quarter_year_from_cycle(db: Session, cycle_id: Optional[str]) -> tuple[Optional[str], Optional[int]]:
+    """Derive objective quarter/year from associated cycle start date."""
+    if not cycle_id:
+        return None, None
+    cycle = db.query(Cycle).filter(Cycle.id == cycle_id).first()
+    if not cycle:
+        return None, None
+    try:
+        start_dt = datetime.fromisoformat(cycle.start_date)
+    except ValueError:
+        return None, None
+    quarter = f"Q{((start_dt.month - 1) // 3) + 1}"
+    return quarter, start_dt.year
+
+
+def _lifecycle_error(exc: ValueError) -> HTTPException:
+    return HTTPException(status_code=400, detail=str(exc))
 
 
 # ── Helper: serialize objective ──────────────────────────────────────────────
@@ -33,6 +139,11 @@ def _obj_dict(obj, db):
         if obj.parent_id
         else None
     )
+    functional_parent = (
+        db.query(Objective).filter(Objective.id == obj.functional_parent_obj_id).first()
+        if obj.functional_parent_obj_id
+        else None
+    )
     cycle = (
         db.query(ReviewCycle).filter(ReviewCycle.id == obj.cycle_id).first()
         if obj.cycle_id
@@ -41,7 +152,7 @@ def _obj_dict(obj, db):
 
     pending_count = 0
     for kr in krs:
-        pc = (
+        pending_updates = (
             db.query(ProgressUpdate)
             .filter(
                 ProgressUpdate.key_result_id == kr.id,
@@ -49,15 +160,40 @@ def _obj_dict(obj, db):
             )
             .count()
         )
-        pending_count += pc
+        pending_submissions = (
+            db.query(ProgressSubmission.id)
+            .filter(
+                ProgressSubmission.key_result_id == kr.id,
+                ProgressSubmission.status == "PENDING",
+            )
+            .count()
+        )
+        pending_count += pending_updates + pending_submissions
 
     assigned_by = (
         db.query(User).filter(User.id == obj.assigned_by_id).first()
         if obj.assigned_by_id
         else None
     )
+    pending_approver = (
+        db.query(User).filter(User.id == obj.pending_approver_user_id).first()
+        if obj.pending_approver_user_id
+        else None
+    )
+    creation_approved_by = (
+        db.query(User).filter(User.id == obj.creation_approved_by_id).first()
+        if obj.creation_approved_by_id
+        else None
+    )
 
     # Resolve scope names
+    from server.models import OrgNode
+
+    region = (
+        db.query(OrgNode).filter(OrgNode.id == obj.region_id).first()
+        if obj.region_id
+        else None
+    )
     plant = db.query(Plant).filter(Plant.id == obj.plant_id).first() if obj.plant_id else None
     dept = db.query(Department).filter(Department.id == obj.department_id).first() if obj.department_id else None
     team = db.query(Team).filter(Team.id == obj.team_id).first() if obj.team_id else None
@@ -65,7 +201,7 @@ def _obj_dict(obj, db):
     # Children count
     children_count = db.query(Objective).filter(Objective.parent_id == obj.id).count()
 
-    return {
+    payload = {
         "id": obj.id,
         "title": obj.title,
         "description": obj.description,
@@ -77,10 +213,15 @@ def _obj_dict(obj, db):
         "assigned_by_id": obj.assigned_by_id,
         "assigned_by_name": assigned_by.name if assigned_by else None,
         "parent_id": obj.parent_id,
+        "functional_parent_obj_id": obj.functional_parent_obj_id,
         "parent_title": parent.title if parent else None,
         "parent_level": parent.level if parent else None,
+        "functional_parent_title": functional_parent.title if functional_parent else None,
+        "functional_parent_level": functional_parent.level if functional_parent else None,
         "cycle_id": obj.cycle_id,
         "cycle_name": cycle.name if cycle else None,
+        "region_id": obj.region_id,
+        "region_name": region.name if region else None,
         "plant_id": obj.plant_id,
         "plant_name": plant.name if plant else None,
         "department_id": obj.department_id,
@@ -89,15 +230,34 @@ def _obj_dict(obj, db):
         "team_name": team.name if team else None,
         "pending_validations": pending_count,
         "children_count": children_count,
+        "creation_primary_approved_at": obj.creation_primary_approved_at.isoformat() if obj.creation_primary_approved_at else None,
+        "creation_functional_approved_at": obj.creation_functional_approved_at.isoformat() if obj.creation_functional_approved_at else None,
+        "okr_status": getattr(obj, "okr_status", None) or OKR_STATUS_DRAFT,
+        "creation_approval_status": obj.creation_approval_status,
+        "rejection_reason": obj.rejection_reason,
+        "pending_approver_user_id": obj.pending_approver_user_id,
+        "pending_approver_role": obj.pending_approver_role,
+        "pending_approver_name": pending_approver.name if pending_approver else None,
+        "creation_approved_by_id": obj.creation_approved_by_id,
+        "creation_approved_by_name": creation_approved_by.name if creation_approved_by else None,
+        "creation_approved_at": obj.creation_approved_at.isoformat() if obj.creation_approved_at else None,
+        "kr_baseline_locked": bool(getattr(obj, "kr_baseline_locked", False)),
+        "function_area": obj.function_area,
+        "function_area_label": FUNCTION_AREA_LABELS.get(obj.function_area or "", None),
+        "function_node_id": obj.function_node_id,
+        "can_publish_as_ceo": bool(owner and ceo_may_self_publish(obj, owner)),
         "created_at": obj.created_at.isoformat() if obj.created_at else None,
         "key_results": [_kr_dict(kr, db) for kr in krs],
     }
+    if (obj.okr_status or "").upper() in ("PENDING_APPROVAL", "DRAFT", "REJECTED", "ACTIVE"):
+        payload["approval_chain_status"] = chain_status(db, SUBJECT_OKR_CREATION, obj.id)
+    return payload
 
 
 def _kr_dict(kr, db):
     pct = calculate_kr_progress(kr)
     # Get pending updates count
-    pending = (
+    pending_updates = (
         db.query(ProgressUpdate)
         .filter(
             ProgressUpdate.key_result_id == kr.id,
@@ -105,6 +265,49 @@ def _kr_dict(kr, db):
         )
         .count()
     )
+    pending_submissions = (
+        db.query(ProgressSubmission.id)
+        .filter(
+            ProgressSubmission.key_result_id == kr.id,
+            ProgressSubmission.status == "PENDING",
+        )
+        .count()
+    )
+    pending = pending_updates + pending_submissions
+    pending_submitted_value = None
+    pending_submitted_note = None
+    if pending > 0:
+        latest_sub = (
+            db.query(ProgressSubmission)
+            .filter(
+                ProgressSubmission.key_result_id == kr.id,
+                ProgressSubmission.status == "PENDING",
+            )
+            .order_by(ProgressSubmission.created_at.desc())
+            .first()
+        )
+        if latest_sub:
+            pending_submitted_value = latest_sub.employee_value
+            pending_submitted_note = latest_sub.employee_note
+        else:
+            latest_upd = (
+                db.query(ProgressUpdate)
+                .filter(
+                    ProgressUpdate.key_result_id == kr.id,
+                    ProgressUpdate.status == "PENDING",
+                )
+                .order_by(ProgressUpdate.created_at.desc())
+                .first()
+            )
+            if latest_upd:
+                pending_submitted_value = latest_upd.new_value
+                pending_submitted_note = latest_upd.notes
+    ingest = db.query(KRIngestSource).filter(KRIngestSource.key_result_id == kr.id).first()
+    ingest_info = None
+    if ingest:
+        from server.services.kr_ingest_service import ingest_source_dict
+
+        ingest_info = ingest_source_dict(ingest)
     return {
         "id": kr.id,
         "title": kr.title,
@@ -115,6 +318,10 @@ def _kr_dict(kr, db):
         "status": kr.status,
         "progress_pct": round(pct, 1),
         "pending_updates": pending,
+        "pending_submitted_value": pending_submitted_value,
+        "pending_submitted_note": pending_submitted_note,
+        "ingest_source": ingest_info,
+        "auto_ingest_active": bool(ingest and ingest.is_active),
     }
 
 
@@ -122,50 +329,77 @@ def _kr_dict(kr, db):
 # LIST / FILTER OBJECTIVES
 # ══════════════════════════════════════════════════════════════════════════════
 
+@router.get("/visibility-scope")
+def get_visibility_scope(
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_jwt_payload),
+):
+    """Role-based OKR visibility metadata for UI tabs and plant filter."""
+    user_id = payload.get("sub", "")
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(404, "User not found")
+    return visibility_scope_response(user, db)
+
+
 @router.get("")
 def list_objectives(
     db: Session = Depends(get_db),
-    org_id: str = "",
-    owner_id: str = "",
-    level: str = "",
-    cycle_id: str = "",
-    plant_id: str = "",
-    department_id: str = "",
-    team_id: str = "",
-    parent_id: str = "",
+    payload: dict = Depends(get_jwt_payload),
+    owner_id: str = Query(""),
+    level: str = Query(""),
+    cycle_id: str = Query(""),
+    year: Optional[int] = Query(None),
+    quarter: str = Query(""),
+    region_id: str = Query(""),
+    plant_id: str = Query(""),
+    department_id: str = Query(""),
+    team_id: str = Query(""),
+    parent_id: str = Query(""),
+    function_area: str = Query(""),
 ):
+    org_id = payload.get("org_id", "")
+    user_id = payload.get("sub", "")
+    if not org_id:
+        raise HTTPException(400, "org_id not found in token")
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(404, "User not found")
+
     q = db.query(Objective).filter(Objective.org_id == org_id)
+    q = apply_okr_visibility_filter(q, user, db, org_id)
+
+    okr_scope = get_user_okr_scope(user, db)
+    q = apply_optional_scope_narrowing(
+        q,
+        okr_scope,
+        plant_id=plant_id or None,
+        department_id=department_id or None,
+        team_id=team_id or None,
+        db=db,
+        org_id=org_id,
+    )
+
     if owner_id:
         q = q.filter(Objective.owner_id == owner_id)
     if level:
-        # Handle "employee" as "INDIVIDUAL"
         resolved_level = level.upper()
         if resolved_level == "EMPLOYEE":
             resolved_level = "INDIVIDUAL"
         q = q.filter(Objective.level == resolved_level)
-    if cycle_id:
-        q = q.filter(Objective.cycle_id == cycle_id)
-    if plant_id:
-        level_upper = (level or "").upper()
-        if level_upper == "EMPLOYEE":
-            level_upper = "INDIVIDUAL"
-        # When browsing all OKRs or org/plant levels, keep company-wide (CEO) OKRs visible
-        # alongside plant-scoped rows. For dept/team/individual tabs, scope strictly by plant.
-        if not level or level_upper in ("ORGANIZATION", "PLANT"):
-            q = q.filter(
-                or_(
-                    Objective.plant_id == plant_id,
-                    Objective.level == "ORGANIZATION",
-                )
-            )
-        else:
-            q = q.filter(Objective.plant_id == plant_id)
-    if department_id:
-        q = q.filter(Objective.department_id == department_id)
-    if team_id:
-        q = q.filter(Objective.team_id == team_id)
+    q = _apply_objective_period_filter(
+        q,
+        year=year,
+        quarter=quarter or None,
+        cycle_id=cycle_id or None,
+    )
     if parent_id:
         q = q.filter(Objective.parent_id == parent_id)
+    if function_area:
+        fa = normalize_function_area(function_area)
+        if fa:
+            q = q.filter(Objective.function_area == fa)
 
     objs = q.order_by(Objective.created_at.desc()).all()
     return [_obj_dict(o, db) for o in objs]
@@ -178,10 +412,15 @@ def list_objectives(
 @router.get("/my")
 def my_objectives(
     db: Session = Depends(get_db),
-    org_id: str = "",
-    user_id: str = "",
+    payload: dict = Depends(get_jwt_payload),
 ):
     """Get OKRs owned by or assigned to the current user."""
+    org_id = payload.get("org_id", "")
+    user_id = payload.get("sub", "")
+    
+    if not org_id or not user_id:
+        raise HTTPException(400, "org_id or user_id not found in token")
+    
     objs = (
         db.query(Objective)
         .filter(
@@ -203,21 +442,72 @@ def my_objectives(
 
 @router.post("")
 def create_objective(
-    req: ObjectiveCreate,
+    body: dict = Body(...),
     db: Session = Depends(get_db),
-    org_id: str = "",
-    user_id: str = "",
-    role: str = "",
+    payload: dict = Depends(get_jwt_payload),
 ):
-    cascade = OKRCascadeService(db)
+    """Create an objective as DRAFT (Phase 6). Rejects ``functional_parent_obj_id`` in JSON (use PATCH)."""
+    org_id = payload.get("org_id", "")
+    user_id = payload.get("sub", "")
+    role = payload.get("role", "")
+    
+    if not org_id or not user_id:
+        raise HTTPException(400, "org_id or user_id not found in token")
+    
+    reject_functional_parent_obj_id_in_create_body(body)
+    req = ObjectiveCreate.model_validate(body)
 
-    # Validate role can create at this level
-    if role and not cascade.can_create_at_level(role, req.level.upper()):
-        raise HTTPException(
-            403,
-            f"Role {role} cannot create {req.level} OKRs. "
-            f"Allowed levels: {allowed_objective_levels_for(normalize_role(role))}"
+    creator = db.query(User).filter(User.id == user_id).first()
+    if not creator:
+        raise HTTPException(404, "User not found")
+
+    plant_id = req.plant_id
+    department_id = req.department_id
+    team_id = req.team_id
+    region_id = req.region_id
+    scope_user = db.query(User).filter(User.id == (req.owner_id or user_id)).first() or creator
+
+    if scope_user and not plant_id and req.level.upper() not in ("ORGANIZATION", "REGION"):
+        plant_id = scope_user.plant_id
+    if scope_user and not department_id and req.level.upper() in ("DEPARTMENT", "TEAM", "INDIVIDUAL"):
+        department_id = scope_user.department_id
+    if scope_user and not team_id and req.level.upper() in ("TEAM", "INDIVIDUAL"):
+        team_id = scope_user.team_id
+    if scope_user and not team_id and req.level.upper() == "INDIVIDUAL":
+        tm = (
+            db.query(TeamMember)
+            .filter(TeamMember.user_id == scope_user.id, TeamMember.is_active == True)
+            .first()
         )
+        if tm:
+            team_id = tm.team_id
+
+    effective_owner_id = req.owner_id or user_id
+    if req.level.upper() == "TEAM":
+        if not team_id:
+            raise HTTPException(400, "Team OKRs require a team to be selected")
+        effective_owner_id = resolve_team_okr_owner_id(team_id, creator, req.owner_id, db)
+    elif req.level.upper() == "INDIVIDUAL" and not req.owner_id:
+        raise HTTPException(
+            400,
+            "Individual OKRs must be assigned to an employee; select Assign To",
+        )
+
+    owner_user = db.query(User).filter(User.id == effective_owner_id).first()
+    if not owner_user:
+        raise HTTPException(404, "OKR owner not found")
+    if effective_owner_id != user_id:
+        ok_assign, assign_reason = actor_may_assign_okr_to_user(
+            creator, owner_user, req.level.upper(), db
+        )
+        if not ok_assign:
+            raise HTTPException(403, assign_reason)
+
+    can_draft, draft_reason = can_user_draft_objective(
+        creator, req.level.upper(), effective_owner_id
+    )
+    if not can_draft:
+        raise HTTPException(403, draft_reason)
 
     # Validate parent exists if specified
     if req.parent_id:
@@ -225,53 +515,365 @@ def create_objective(
         if not parent:
             raise HTTPException(404, "Parent objective not found")
 
-    # Auto-populate scope from assignment when not provided.
-    # For INDIVIDUAL OKRs assigned to someone else, use the owner's plant/dept/team.
-    creator = db.query(User).filter(User.id == user_id).first()
-    effective_owner_id = req.owner_id or user_id
-    scope_user = db.query(User).filter(User.id == effective_owner_id).first() or creator
+    scope_user = owner_user or creator
 
-    plant_id = req.plant_id
-    department_id = req.department_id
-    team_id = req.team_id
+    # Auto-populate region_id for REGION level OKRs from user's org_node if it's a region
+    if not region_id and req.level.upper() in ("REGION", "PLANT", "DEPARTMENT"):
+        if scope_user and scope_user.org_node_id:
+            from server.models import OrgNode
+            org_node = db.query(OrgNode).filter(OrgNode.id == scope_user.org_node_id).first()
+            if org_node and org_node.node_type == "REGION":
+                region_id = org_node.id
 
-    if scope_user and not plant_id and req.level.upper() not in ("ORGANIZATION",):
+    if scope_user and not plant_id and req.level.upper() not in ("ORGANIZATION", "REGION"):
         plant_id = scope_user.plant_id
     if scope_user and not department_id and req.level.upper() in ("DEPARTMENT", "TEAM", "INDIVIDUAL"):
         department_id = scope_user.department_id
     if scope_user and not team_id and req.level.upper() in ("TEAM", "INDIVIDUAL"):
         team_id = scope_user.team_id
-    # Team roster may use team_members while User.team_id is unset
-    if (
-        scope_user
-        and not team_id
-        and req.level.upper() == "INDIVIDUAL"
-    ):
+    if scope_user and not team_id and req.level.upper() == "INDIVIDUAL":
         tm = (
             db.query(TeamMember)
-            .filter(
-                TeamMember.user_id == scope_user.id,
-                TeamMember.is_active == True,
-            )
+            .filter(TeamMember.user_id == scope_user.id, TeamMember.is_active == True)
             .first()
         )
         if tm:
             team_id = tm.team_id
 
+    resolved_cycle_id = _resolve_cycle_id(db, org_id, req.cycle_id)
+
+    derived_quarter, derived_year = _derive_quarter_year_from_cycle(db, resolved_cycle_id)
+
+    fa, fn_id = resolve_function_area_on_create(
+        db,
+        creator,
+        level=req.level,
+        explicit_area=req.function_area,
+        org_id=org_id,
+    )
+
     obj = Objective(
         org_id=org_id,
-        owner_id=req.owner_id or user_id,
-        assigned_by_id=user_id if req.owner_id and req.owner_id != user_id else None,
+        owner_id=effective_owner_id,
+        assigned_by_id=user_id if effective_owner_id != user_id else None,
         parent_id=req.parent_id,
-        cycle_id=req.cycle_id,
+        cycle_id=resolved_cycle_id,
         title=req.title,
         description=req.description,
         level=req.level.upper(),
+        region_id=region_id,
         plant_id=plant_id,
         department_id=department_id,
         team_id=team_id,
+        okr_status=OKR_STATUS_DRAFT,
+        creation_approval_status="PENDING",
+        status="ACTIVE",
+        quarter=derived_quarter,
+        year=derived_year,
+        function_area=fa,
+        function_node_id=fn_id,
     )
     db.add(obj)
+    db.flush()
+    try:
+        enqueue_okr_creation_approval(db, obj, org_id, creator)
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(400, str(e))
+    db.commit()
+    db.refresh(obj)
+    return _obj_dict(obj, db)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FUNCTION-SCOPED OKR VIEWS
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/functional-overview")
+def functional_overview(
+    function_area: str = Query(""),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_jwt_payload),
+):
+    """CEO: all functions' vertical OKRs. Functional head: own function only."""
+    org_id = payload.get("org_id", "")
+    user_id = payload.get("sub", "")
+    if not org_id or not user_id:
+        raise HTTPException(400, "org_id or user_id not found in token")
+    viewer = db.query(User).filter(User.id == user_id).first()
+    if not viewer:
+        raise HTTPException(404, "User not found")
+    return get_functional_okrs(
+        db,
+        org_id,
+        viewer,
+        function_area=function_area or None,
+    )
+
+
+@router.get("/function-structure")
+def function_structure(
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_jwt_payload),
+):
+    """Functional head: vertical → sub-heads → plant department OKRs for their function."""
+    org_id = payload.get("org_id", "")
+    user_id = payload.get("sub", "")
+    if not org_id or not user_id:
+        raise HTTPException(400, "org_id or user_id not found in token")
+    viewer = db.query(User).filter(User.id == user_id).first()
+    if not viewer:
+        raise HTTPException(404, "User not found")
+    try:
+        return get_function_structure(db, org_id, viewer)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.get("/function-areas")
+def list_function_areas():
+    """Catalog of valid function_area values for create dialogs and filters."""
+    return {
+        "areas": [
+            {"value": a, "label": FUNCTION_AREA_LABELS.get(a, a)} for a in FUNCTION_AREAS
+        ]
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PHASE 6 — OKR LIFECYCLE (draft / submit / publish / admin override)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/lifecycle-approval-queue")
+def list_lifecycle_approval_queue(
+    status: str = Query("pending"),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_jwt_payload),
+):
+    """
+    OKR creation approval queue with history.
+
+    status: pending | approved | rejected
+    """
+    org_id = payload.get("org_id", "")
+    user_id = payload.get("sub", "")
+    role = payload.get("role", "")
+
+    if not org_id or not user_id:
+        raise HTTPException(400, "org_id or user_id not found in token")
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(404, "User not found")
+
+    st = (status or "pending").strip().lower()
+    q = db.query(Objective).filter(Objective.org_id == org_id)
+    is_exec = normalize_role(role) in (SystemRole.SUPER_ADMIN, SystemRole.CEO)
+
+    if st == "pending":
+        q = q.filter(Objective.okr_status == "PENDING_APPROVAL")
+        if not is_exec:
+            pending_ids = pending_subject_ids_for_approver(
+                db, org_id, user_id, SUBJECT_OKR_CREATION
+            )
+            if pending_ids:
+                q = q.filter(Objective.id.in_(pending_ids))
+            else:
+                q = q.filter(Objective.pending_approver_user_id == user_id)
+    elif st == "approved":
+        q = q.filter(
+            Objective.okr_status == "ACTIVE",
+            Objective.creation_approval_status == "APPROVED",
+        )
+        if not is_exec:
+            q = q.filter(
+                or_(
+                    Objective.creation_approved_by_id == user_id,
+                    Objective.creation_primary_approved_by_id == user_id,
+                )
+            )
+    elif st == "rejected":
+        q = q.filter(Objective.okr_status == "REJECTED")
+        q = apply_okr_visibility_filter(q, user, db, org_id)
+    else:
+        raise HTTPException(400, "status must be pending, approved, or rejected")
+
+    if st == "approved":
+        objs = q.order_by(
+            Objective.creation_approved_at.desc(),
+            Objective.created_at.desc(),
+        ).all()
+    else:
+        objs = q.order_by(Objective.created_at.desc()).all()
+    return [_obj_dict(o, db) for o in objs]
+
+
+@router.get("/pending-lifecycle-approval")
+def list_pending_lifecycle_approval(
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_jwt_payload),
+):
+    """OKRs awaiting this user's approval (``okr_status=PENDING_APPROVAL``)."""
+    org_id = payload.get("org_id", "")
+    user_id = payload.get("sub", "")
+    role = payload.get("role", "")
+    
+    if not org_id or not user_id:
+        raise HTTPException(400, "org_id or user_id not found in token")
+    
+    q = (
+        db.query(Objective)
+        .filter(
+            Objective.org_id == org_id,
+            Objective.okr_status == "PENDING_APPROVAL",
+        )
+    )
+    if normalize_role(role) not in (SystemRole.SUPER_ADMIN, SystemRole.CEO):
+        pending_ids = pending_subject_ids_for_approver(
+            db, org_id, user_id, SUBJECT_OKR_CREATION
+        )
+        if pending_ids:
+            q = q.filter(Objective.id.in_(pending_ids))
+        else:
+            q = q.filter(Objective.pending_approver_user_id == user_id)
+
+    objs = q.order_by(Objective.created_at.desc()).all()
+    return [_obj_dict(o, db) for o in objs]
+
+
+@router.get("/admin/lifecycle-overrides")
+def list_admin_lifecycle_overrides(
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_jwt_payload),
+):
+    """In-flight OKRs for SUPER_ADMIN override UI (not the business approval queue)."""
+    org_id = payload.get("org_id", "")
+    role = payload.get("role", "")
+    
+    if not org_id:
+        raise HTTPException(400, "org_id not found in token")
+    
+    if normalize_role(role) != SystemRole.SUPER_ADMIN:
+        raise HTTPException(403, "SUPER_ADMIN required")
+    objs = (
+        db.query(Objective)
+        .filter(
+            Objective.org_id == org_id,
+            Objective.okr_status.in_(["DRAFT", "PENDING_APPROVAL", "REJECTED"]),
+        )
+        .order_by(Objective.created_at.desc())
+        .all()
+    )
+    return [_obj_dict(o, db) for o in objs]
+
+
+@router.post("/{obj_id}/submit-for-approval")
+def submit_objective_for_approval(
+    obj_id: str,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_jwt_payload),
+):
+    org_id = payload.get("org_id", "")
+    user_id = payload.get("sub", "")
+    
+    if not org_id or not user_id:
+        raise HTTPException(400, "org_id or user_id not found in token")
+    
+    obj = db.query(Objective).filter(Objective.id == obj_id).first()
+    if not obj:
+        raise HTTPException(404, "Objective not found")
+    actor = db.query(User).filter(User.id == user_id).first()
+    if not actor:
+        raise HTTPException(404, "User not found")
+    try:
+        result = submit_for_approval(db, obj, org_id, actor)
+        db.commit()
+        db.refresh(obj)
+        return {"objective": _obj_dict(obj, db), **result}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.post("/{obj_id}/publish")
+def publish_objective_as_ceo(
+    obj_id: str,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_jwt_payload),
+):
+    """CEO self-publish org-level OKR (DRAFT -> ACTIVE, skips approval queue)."""
+    org_id = payload.get("org_id", "")
+    user_id = payload.get("sub", "")
+    
+    if not org_id or not user_id:
+        raise HTTPException(400, "org_id or user_id not found in token")
+    
+    obj = db.query(Objective).filter(Objective.id == obj_id).first()
+    if not obj:
+        raise HTTPException(404, "Objective not found")
+    owner = db.query(User).filter(User.id == obj.owner_id).first()
+    if not owner:
+        raise HTTPException(404, "Owner not found")
+    try:
+        publish_ceo_okr(db, obj, owner, org_id, user_id)
+        db.commit()
+        db.refresh(obj)
+        return _obj_dict(obj, db)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.post("/{obj_id}/admin-approve")
+def admin_approve_objective(
+    obj_id: str,
+    body: dict = Body(...),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_jwt_payload),
+):
+    org_id = payload.get("org_id", "")
+    user_id = payload.get("sub", "")
+    role = payload.get("role", "")
+    
+    if not org_id or not user_id:
+        raise HTTPException(400, "org_id or user_id not found in token")
+    
+    if normalize_role(role) != SystemRole.SUPER_ADMIN:
+        raise HTTPException(403, "SUPER_ADMIN required")
+    override_reason = (body.get("override_reason") or "").strip()
+    if not override_reason:
+        raise HTTPException(400, "override_reason is required")
+    obj = db.query(Objective).filter(Objective.id == obj_id).first()
+    if not obj:
+        raise HTTPException(404, "Objective not found")
+    admin_approve_okr(db, obj, org_id, user_id, override_reason)
+    db.commit()
+    db.refresh(obj)
+    return _obj_dict(obj, db)
+
+
+@router.post("/{obj_id}/admin-reject")
+def admin_reject_objective(
+    obj_id: str,
+    body: dict = Body(...),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_jwt_payload),
+):
+    org_id = payload.get("org_id", "")
+    user_id = payload.get("sub", "")
+    role = payload.get("role", "")
+    
+    if not org_id or not user_id:
+        raise HTTPException(400, "org_id or user_id not found in token")
+    
+    if normalize_role(role) != SystemRole.SUPER_ADMIN:
+        raise HTTPException(403, "SUPER_ADMIN required")
+    override_reason = (body.get("override_reason") or "").strip()
+    if not override_reason:
+        raise HTTPException(400, "override_reason is required")
+    rejection_reason = (body.get("rejection_reason") or override_reason).strip()
+    obj = db.query(Objective).filter(Objective.id == obj_id).first()
+    if not obj:
+        raise HTTPException(404, "Objective not found")
+    admin_reject_okr(db, obj, org_id, user_id, override_reason, rejection_reason)
     db.commit()
     db.refresh(obj)
     return _obj_dict(obj, db)
@@ -283,11 +885,9 @@ def create_objective(
 
 @router.post("/assign")
 def assign_okr_to_employee(
-    req: ObjectiveAssignCreate,
+    body: dict = Body(...),
     db: Session = Depends(get_db),
-    org_id: str = "",
-    user_id: str = "",
-    role: str = "",
+    payload: dict = Depends(get_jwt_payload),
 ):
     """
     Manager/Admin/CEO assigns an OKR to an employee.
@@ -295,8 +895,17 @@ def assign_okr_to_employee(
     - Can only assign to users they have authority over
     - Creates INDIVIDUAL-level OKR for the target employee
     """
+    org_id = payload.get("org_id", "")
+    user_id = payload.get("sub", "")
+    role = payload.get("role", "")
+    
+    if not org_id or not user_id:
+        raise HTTPException(400, "org_id or user_id not found in token")
+    
+    reject_functional_parent_obj_id_in_create_body(body)
+    req = ObjectiveAssignCreate.model_validate(body)
     # Verify actor has permission to assign
-    allowed_roles = ["CEO", "SUPER_ADMIN", "PLANT_HEAD", "DEPT_HEAD", "MANAGER"]
+    allowed_roles = ["CEO", "SUPER_ADMIN", "PLANT_HEAD", "DEPT_HEAD", "MANAGER", "TEAM_LEAD", "SUPERVISOR"]
     if role not in allowed_roles:
         raise HTTPException(
             status_code=403,
@@ -359,24 +968,32 @@ def assign_okr_to_employee(
         if tm:
             team_id = tm.team_id
     
+    resolved_cycle_id = _resolve_cycle_id(db, org_id, req.cycle_id)
+
     # Create the OKR as INDIVIDUAL level
+    derived_quarter, derived_year = _derive_quarter_year_from_cycle(db, resolved_cycle_id)
+
     obj = Objective(
         id=str(uuid.uuid4()),
         org_id=org_id,
         owner_id=req.employee_user_id,  # The OKR belongs to the employee
         assigned_by_id=user_id,  # Assigned by this manager
         parent_id=req.parent_id,
-        cycle_id=req.cycle_id,
+        cycle_id=resolved_cycle_id,
         title=req.title,
         description=req.description,
         level="INDIVIDUAL",  # Always INDIVIDUAL for assignments
         plant_id=plant_id,
         department_id=department_id,
         team_id=team_id,
+        okr_status=OKR_STATUS_DRAFT,
+        creation_approval_status="PENDING",
+        quarter=derived_quarter,
+        year=derived_year,
     )
     db.add(obj)
     db.flush()
-    
+
     # Add key results if provided
     if req.key_results:
         for kr_data in req.key_results:
@@ -389,7 +1006,13 @@ def assign_okr_to_employee(
                 weight=kr_data.weight or 1.0,
             )
             db.add(kr)
-    
+
+    try:
+        enqueue_okr_creation_approval(db, obj, org_id, manager)
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(400, str(e))
+
     db.commit()
     db.refresh(obj)
     return _obj_dict(obj, db)
@@ -402,11 +1025,16 @@ def assign_okr_to_employee(
 @router.get("/alignment-tree")
 def get_alignment_tree(
     db: Session = Depends(get_db),
-    org_id: str = "",
-    plant_id: str = "",
+    payload: dict = Depends(get_jwt_payload),
+    plant_id: str = Query(""),
+    cycle_id: str = Query(""),
 ):
+    org_id = payload.get("org_id", "")
+    if not org_id:
+        raise HTTPException(400, "org_id not found in token")
+    
     cascade = OKRCascadeService(db)
-    return cascade.get_cascade_tree(org_id, plant_id or None)
+    return cascade.get_cascade_tree(org_id, plant_id or None, cycle_id or None)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -416,11 +1044,51 @@ def get_alignment_tree(
 @router.get("/progress-summary")
 def get_progress_summary(
     db: Session = Depends(get_db),
-    org_id: str = "",
-    plant_id: str = "",
+    payload: dict = Depends(get_jwt_payload),
+    plant_id: str = Query(""),
+    cycle_id: str = Query(""),
+    year: Optional[int] = Query(None),
+    quarter: str = Query(""),
 ):
-    cascade = OKRCascadeService(db)
-    return cascade.get_progress_summary(org_id, plant_id or None)
+    org_id = payload.get("org_id", "")
+    user_id = payload.get("sub", "")
+    if not org_id:
+        raise HTTPException(400, "org_id not found in token")
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(404, "User not found")
+
+    okr_scope = get_user_okr_scope(user, db)
+    levels = ["ORGANIZATION", "REGION", "PLANT", "DEPARTMENT", "TEAM", "INDIVIDUAL"]
+    summary = {}
+    for level in levels:
+        q = db.query(Objective).filter(Objective.org_id == org_id, Objective.level == level)
+        q = apply_okr_visibility_filter(q, user, db, org_id)
+        q = apply_optional_scope_narrowing(
+            q, okr_scope, plant_id=plant_id or None, db=db, org_id=org_id
+        )
+        q = _apply_objective_period_filter(
+            q,
+            year=year,
+            quarter=quarter or None,
+            cycle_id=cycle_id or None,
+        )
+        objs = q.all()
+        on_track = sum(1 for o in objs if (o.progress or 0) >= 75)
+        at_risk = sum(1 for o in objs if 60 <= (o.progress or 0) < 75)
+        off_track = sum(1 for o in objs if (o.progress or 0) < 60)
+        avg_progress = (
+            round(sum(o.progress or 0 for o in objs) / len(objs), 1) if objs else 0
+        )
+        summary[level] = {
+            "total": len(objs),
+            "on_track": on_track,
+            "at_risk": at_risk,
+            "off_track": off_track,
+            "avg_progress": avg_progress,
+        }
+    return summary
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -428,9 +1096,42 @@ def get_progress_summary(
 # ══════════════════════════════════════════════════════════════════════════════
 
 @router.get("/allowed-levels")
-def get_allowed_levels(role: str = ""):
-    """Return which OKR levels the given role can create."""
-    levels = allowed_objective_levels_for(normalize_role(role))
+def get_allowed_levels(
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_jwt_payload),
+):
+    """Return which OKR levels the user may create or draft (Phase 6 includes self-draft levels)."""
+    from server.roles import (
+        ROLE_TO_BUSINESS_LEVEL,
+        OBJECTIVE_LEVEL_ORDER,
+        objective_level_to_business_level,
+        get_business_level,
+    )
+    
+    role = payload.get("role", "")
+    user_id = payload.get("sub", "")
+
+    from server.roles import can_create_objective_at_level
+
+    role_n = normalize_role(role)
+    levels_set = set(allowed_objective_levels_for(role_n))
+
+    user = db.query(User).filter(User.id == user_id).first() if user_id else None
+    if user:
+        bl = get_business_level(role_n)
+        if role_n == SystemRole.SUPER_ADMIN:
+            for lvl in OBJECTIVE_LEVEL_ORDER:
+                levels_set.add(lvl)
+        elif bl is not None:
+            max_bl = max(ROLE_TO_BUSINESS_LEVEL.values())
+            for lvl in OBJECTIVE_LEVEL_ORDER:
+                if not can_create_objective_at_level(role_n, lvl):
+                    continue
+                target_bl = objective_level_to_business_level(lvl)
+                if target_bl is not None and target_bl in (bl, min(bl + 1, max_bl)):
+                    levels_set.add(lvl)
+
+    levels = [lvl for lvl in OBJECTIVE_LEVEL_ORDER if lvl in levels_set]
     return {"role": role, "allowed_levels": levels}
 
 
@@ -440,22 +1141,28 @@ def get_allowed_levels(role: str = ""):
 
 @router.get("/parent-options")
 def get_parent_options(
-    level: str = "",
+    level: str = Query(""),
     db: Session = Depends(get_db),
-    org_id: str = "",
-    plant_id: str = "",
-    department_id: str = "",
+    payload: dict = Depends(get_jwt_payload),
+    plant_id: str = Query(""),
+    department_id: str = Query(""),
+    cycle_id: str = Query(""),
 ):
     """
     Get possible parent objectives for a given level.
-    - PLANT OKR → parent can be ORGANIZATION
-    - DEPARTMENT OKR → parent can be PLANT
-    - TEAM OKR → parent can be DEPARTMENT
-    - INDIVIDUAL OKR → parent can be TEAM or DEPARTMENT
+    - PLANT OKR -> parent can be ORGANIZATION
+    - DEPARTMENT OKR -> parent can be PLANT
+    - TEAM OKR -> parent can be DEPARTMENT
+    - INDIVIDUAL OKR -> parent can be TEAM or DEPARTMENT
     """
+    org_id = payload.get("org_id", "")
+    if not org_id:
+        raise HTTPException(400, "org_id not found in token")
+    
     level = level.upper()
     parent_levels = {
-        "PLANT": ["ORGANIZATION"],
+        "REGION": ["ORGANIZATION"],
+        "PLANT": ["ORGANIZATION", "REGION"],
         "DEPARTMENT": ["PLANT"],
         "TEAM": ["DEPARTMENT"],
         "INDIVIDUAL": ["TEAM", "DEPARTMENT"],
@@ -469,6 +1176,8 @@ def get_parent_options(
         Objective.org_id == org_id,
         Objective.level.in_(allowed_parent_levels),
     )
+    if cycle_id:
+        q = q.filter(Objective.cycle_id == cycle_id)
 
     # Scope filtering
     if plant_id:
@@ -476,7 +1185,7 @@ def get_parent_options(
         q = q.filter(
             or_(
                 Objective.plant_id == plant_id,
-                Objective.level == "ORGANIZATION",
+                Objective.level.in_(("ORGANIZATION", "REGION")),
             )
         )
     if department_id and "DEPARTMENT" in allowed_parent_levels:
@@ -499,10 +1208,66 @@ def get_parent_options(
 # ══════════════════════════════════════════════════════════════════════════════
 
 @router.get("/{obj_id}")
-def get_objective(obj_id: str, db: Session = Depends(get_db)):
+def get_objective(
+    obj_id: str,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_jwt_payload),
+):
+    org_id = payload.get("org_id", "")
+    if not org_id:
+        raise HTTPException(400, "org_id not found in token")
+    
     obj = db.query(Objective).filter(Objective.id == obj_id).first()
     if not obj:
         raise HTTPException(404, "Objective not found")
+    
+    # Verify the OKR belongs to this org
+    if obj.org_id != org_id:
+        raise HTTPException(403, "Unauthorized")
+    
+    return _obj_dict(obj, db)
+
+
+@router.patch("/{obj_id}")
+def patch_objective_functional_parent(
+    obj_id: str,
+    req: ObjectiveFunctionalParentPatch,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_jwt_payload),
+):
+    """
+    Set or clear ``functional_parent_obj_id`` (SUPER_ADMIN, Bearer JWT).
+    Omitted field = no change; explicit null clears.
+    """
+    org_id = payload.get("org_id", "")
+    if not org_id:
+        raise HTTPException(400, "org_id not found in token")
+    
+    obj = db.query(Objective).filter(Objective.id == obj_id, Objective.org_id == org_id).first()
+    if not obj:
+        raise HTTPException(404, "Objective not found")
+    payload = req.model_dump(exclude_unset=True)
+    if "functional_parent_obj_id" not in payload:
+        return _obj_dict(obj, db)
+    validate_functional_parent_objective(obj, payload["functional_parent_obj_id"], db)
+    obj.functional_parent_obj_id = payload["functional_parent_obj_id"]
+    if not obj.function_area and payload["functional_parent_obj_id"]:
+        inherited = inherit_function_area_from_parent(db, payload["functional_parent_obj_id"])
+        if inherited:
+            obj.function_area = inherited
+            owner = db.query(User).filter(User.id == obj.owner_id).first()
+            if owner:
+                _, fn_id = resolve_function_area_on_create(
+                    db,
+                    owner,
+                    level=obj.level,
+                    explicit_area=inherited,
+                    org_id=obj.org_id,
+                )
+                if fn_id:
+                    obj.function_node_id = fn_id
+    db.commit()
+    db.refresh(obj)
     return _obj_dict(obj, db)
 
 
@@ -524,16 +1289,39 @@ def update_objective(obj_id: str, req: ObjectiveCreate, db: Session = Depends(ge
         obj.department_id = req.department_id
     if req.team_id is not None:
         obj.team_id = req.team_id
+    if req.function_area is not None:
+        fa = normalize_function_area(req.function_area)
+        obj.function_area = fa
+        if fa:
+            owner = db.query(User).filter(User.id == obj.owner_id).first()
+            if owner:
+                _, fn_id = resolve_function_area_on_create(
+                    db, owner, level=obj.level, explicit_area=fa, org_id=obj.org_id
+                )
+                obj.function_node_id = fn_id
     db.commit()
     db.refresh(obj)
     return _obj_dict(obj, db)
 
 
 @router.delete("/{obj_id}")
-def delete_objective(obj_id: str, db: Session = Depends(get_db)):
+def delete_objective(
+    obj_id: str,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_jwt_payload),
+):
+    org_id = payload.get("org_id", "")
+    if not org_id:
+        raise HTTPException(400, "org_id not found in token")
+    
     obj = db.query(Objective).filter(Objective.id == obj_id).first()
     if not obj:
         raise HTTPException(404)
+    
+    # Verify the OKR belongs to this org
+    if obj.org_id != org_id:
+        raise HTTPException(403, "Unauthorized")
+    
     # Also delete children recursively
     _delete_children(obj_id, db)
     db.delete(obj)
@@ -558,6 +1346,10 @@ def add_key_result(obj_id: str, req: KeyResultCreate, db: Session = Depends(get_
     obj = db.query(Objective).filter(Objective.id == obj_id).first()
     if not obj:
         raise HTTPException(404, "Objective not found")
+    try:
+        assert_okr_allows_kr_edit(obj)
+    except ValueError as e:
+        raise _lifecycle_error(e)
     kr = KeyResult(
         objective_id=obj_id,
         title=req.title,
@@ -577,6 +1369,12 @@ def update_key_result(kr_id: str, req: KeyResultCreate, db: Session = Depends(ge
     kr = db.query(KeyResult).filter(KeyResult.id == kr_id).first()
     if not kr:
         raise HTTPException(404)
+    obj = db.query(Objective).filter(Objective.id == kr.objective_id).first()
+    if obj:
+        try:
+            assert_okr_allows_kr_edit(obj)
+        except ValueError as e:
+            raise _lifecycle_error(e)
     kr.title = req.title
     kr.target_value = req.target_value
     kr.unit = req.unit
@@ -593,10 +1391,103 @@ def delete_key_result(kr_id: str, db: Session = Depends(get_db)):
     if not kr:
         raise HTTPException(404)
     obj_id = kr.objective_id
+    db.query(KRIngestSource).filter(KRIngestSource.key_result_id == kr_id).delete()
     db.delete(kr)
     db.commit()
     _recalc_and_cascade(obj_id, db)
     return {"status": "deleted"}
+
+
+@router.get("/key-results/{kr_id}/ingest-source")
+def get_kr_ingest_source(kr_id: str, db: Session = Depends(get_db)):
+    kr = db.query(KeyResult).filter(KeyResult.id == kr_id).first()
+    if not kr:
+        raise HTTPException(404, "Key result not found")
+    src = db.query(KRIngestSource).filter(KRIngestSource.key_result_id == kr_id).first()
+    if not src:
+        return {"configured": False}
+    from server.services.kr_ingest_service import ingest_source_dict
+
+    return {"configured": True, "ingest_source": ingest_source_dict(src)}
+
+
+@router.put("/key-results/{kr_id}/ingest-source")
+def configure_kr_ingest_source(
+    kr_id: str,
+    req: KRIngestSourceConfigure,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_jwt_payload),
+):
+    """Configure or update auto-ingest for a KR. Returns api_token once when created or rotated."""
+    org_id = payload.get("org_id", "")
+    user_id = payload.get("sub", "")
+    
+    if not org_id or not user_id:
+        raise HTTPException(400, "org_id or user_id not found in token")
+    
+    kr = db.query(KeyResult).filter(KeyResult.id == kr_id).first()
+    if not kr:
+        raise HTTPException(404, "Key result not found")
+    obj = db.query(Objective).filter(Objective.id == kr.objective_id).first()
+    if not obj or obj.org_id != org_id:
+        raise HTTPException(404, "Objective not found")
+
+    tag = (req.source_metric_tag or "").strip()
+    if not tag:
+        raise HTTPException(400, "source_metric_tag is required")
+
+    from server.services.kr_ingest_service import (
+        generate_ingest_token,
+        ingest_source_dict,
+    )
+
+    src = db.query(KRIngestSource).filter(KRIngestSource.key_result_id == kr_id).first()
+    api_token_plain: str | None = None
+
+    if src:
+        src.source_system = req.source_system.strip()
+        src.source_metric_tag = tag
+        src.transform_expr = req.transform_expr
+        src.is_active = req.is_active
+        if req.rotate_token:
+            api_token_plain, token_hash = generate_ingest_token()
+            src.api_token_hash = token_hash
+    else:
+        api_token_plain, token_hash = generate_ingest_token()
+        src = KRIngestSource(
+            org_id=org_id,
+            key_result_id=kr_id,
+            source_system=req.source_system.strip(),
+            source_metric_tag=tag,
+            transform_expr=req.transform_expr,
+            api_token_hash=token_hash,
+            is_active=req.is_active,
+        )
+        db.add(src)
+
+    db.commit()
+    db.refresh(src)
+
+    from server.services.audit_service import record_audit_event
+
+    record_audit_event(
+        org_id=org_id,
+        actor_user_id=user_id,
+        action="KR_INGEST_CONFIGURE",
+        entity_type="KEY_RESULT",
+        entity_id=kr_id,
+        details={
+            "source_system": src.source_system,
+            "source_metric_tag": src.source_metric_tag,
+            "is_active": src.is_active,
+            "rotated": req.rotate_token or api_token_plain is not None,
+        },
+    )
+
+    out = {"configured": True, "ingest_source": ingest_source_dict(src)}
+    if api_token_plain:
+        out["api_token"] = api_token_plain
+    return out
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -613,6 +1504,17 @@ def submit_progress(
     kr = db.query(KeyResult).filter(KeyResult.id == kr_id).first()
     if not kr:
         raise HTTPException(404, "Key Result not found")
+    obj = db.query(Objective).filter(Objective.id == kr.objective_id).first()
+    if obj:
+        try:
+            assert_okr_allows_progress(obj)
+        except ValueError as e:
+            raise _lifecycle_error(e)
+
+    ingest = db.query(KRIngestSource).filter(
+        KRIngestSource.key_result_id == kr_id, KRIngestSource.is_active == True
+    ).first()
+    is_override = ingest is not None
 
     update = ProgressUpdate(
         key_result_id=kr_id,
@@ -622,9 +1524,23 @@ def submit_progress(
         notes=req.notes,
         blockers=req.blockers,
         evidence_url=req.evidence_url,
+        progress_source="MANUAL",
+        is_manual_override=is_override,
         status="PENDING",
     )
     db.add(update)
+
+    if is_override and obj:
+        from server.services.audit_service import record_audit_event
+
+        record_audit_event(
+            org_id=obj.org_id,
+            actor_user_id=user_id,
+            action="KR_MANUAL_OVERRIDE",
+            entity_type="KEY_RESULT",
+            entity_id=kr_id,
+            details={"new_value": req.new_value, "notes": req.notes},
+        )
 
     # Update KR value immediately (can be reverted if rejected)
     kr.current_value = req.new_value
@@ -640,6 +1556,7 @@ def submit_progress(
         "status": update.status,
         "new_value": req.new_value,
         "progress_pct": round(pct, 1),
+        "is_manual_override": is_override,
     }
 
 
@@ -720,12 +1637,17 @@ def get_progress_history(kr_id: str, db: Session = Depends(get_db)):
 @router.get("/pending-validations")
 def get_pending_validations(
     db: Session = Depends(get_db),
-    org_id: str = "",
-    user_id: str = "",
-    role: str = "",
-    plant_id: str = "",
+    payload: dict = Depends(get_jwt_payload),
+    plant_id: str = Query(""),
 ):
     """Get all pending progress validations that the current user should review."""
+    org_id = payload.get("org_id", "")
+    user_id = payload.get("sub", "")
+    role = payload.get("role", "")
+    
+    if not org_id or not user_id:
+        raise HTTPException(400, "org_id or user_id not found in token")
+    
     from sqlalchemy import and_
 
     # Get objectives the user manages (directly assigned or in their scope)
@@ -733,26 +1655,27 @@ def get_pending_validations(
     if not user:
         return []
 
-    # Find OKRs in scope
-    q = db.query(Objective).filter(Objective.org_id == org_id)
-
-    if role in ("SUPER_ADMIN", "CEO"):
-        pass  # See all
-    elif role in ("PLANT_HEAD", "PLANT_MANAGER", "VP_OPERATIONS"):
-        if user.plant_id:
-            q = q.filter(Objective.plant_id == user.plant_id)
-    elif role == "DEPT_HEAD":
-        if user.department_id:
-            q = q.filter(Objective.department_id == user.department_id)
-    elif role in ("MANAGER", "TEAM_LEAD"):
-        if user.team_id:
-            q = q.filter(Objective.team_id == user.team_id)
-    else:
-        # Regular employees don't validate
+    if role not in (
+        "SUPER_ADMIN",
+        "CEO",
+        "VP_OPERATIONS",
+        "REGIONAL_HEAD",
+        "PLANT_HEAD",
+        "PLANT_MANAGER",
+        "VP_MANUFACTURING",
+        "DEPT_HEAD",
+        "MANAGER",
+        "TEAM_LEAD",
+        "SUPERVISOR",
+    ):
         return []
 
-    if plant_id:
-        q = q.filter(Objective.plant_id == plant_id)
+    q = db.query(Objective).filter(Objective.org_id == org_id)
+    q = apply_okr_visibility_filter(q, user, db, org_id)
+    okr_scope = get_user_okr_scope(user, db)
+    q = apply_optional_scope_narrowing(
+        q, okr_scope, plant_id=plant_id or None, db=db, org_id=org_id
+    )
 
     obj_ids = [o.id for o in q.all()]
     if not obj_ids:

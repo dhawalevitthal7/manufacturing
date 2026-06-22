@@ -13,6 +13,7 @@ import {
 import { useValidateProgress } from "@/lib/hooks";
 import { api } from "@/lib/api";
 import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import type { PendingValidation } from "@/lib/api";
 
 interface Props {
@@ -27,17 +28,28 @@ export function ValidationQueue({ validations }: Props) {
   const [overrideNote, setOverrideNote] = useState("");
   const [reviewingId, setReviewingId] = useState<string | null>(null);
 
-  const handleApprove = async (id: string) => {
-    setReviewingId(id);
+  const handleApprove = async (v: PendingValidation) => {
+    setReviewingId(v.id);
     try {
-      await api.reviewProgressSubmission(id, { action: "approve" });
+      const result = await api.reviewProgressSubmission(v.id, { action: "approve" }) as {
+        objective_progress?: number;
+        kr_current_value?: number;
+      };
       queryClient.invalidateQueries({ queryKey: ["objectives"] });
       queryClient.invalidateQueries({ queryKey: ["pending-validations"] });
       queryClient.invalidateQueries({ queryKey: ["progress-summary"] });
       queryClient.invalidateQueries({ queryKey: ["alignment-tree"] });
-    } catch {
-      // Fallback to legacy validation
-      validate.mutate({ updateId: id, validation: { status: "APPROVED" } });
+      const pct = result.objective_progress ?? v.new_value;
+      toast.success("Progress approved and saved", {
+        description: `${v.objective_title}: ${pct}% objective progress recorded in the system.`,
+      });
+    } catch (err: unknown) {
+      if (v.source === "legacy_update") {
+        validate.mutate({ updateId: v.id, validation: { status: "APPROVED" } });
+      } else {
+        const msg = err instanceof Error ? err.message : "Approval failed";
+        toast.error(msg);
+      }
     }
     setReviewingId(null);
   };
@@ -87,7 +99,7 @@ export function ValidationQueue({ validations }: Props) {
             <CheckCircle2 className="mx-auto h-10 w-10 text-emerald-500/40 mb-2" />
             <p className="text-sm text-muted-foreground">No pending validations</p>
             <p className="text-xs text-muted-foreground/60 mt-0.5">
-              Employee progress submissions will appear here for review.
+              Progress submissions from your team (and levels below you) appear here for approve or override.
             </p>
           </div>
         </CardContent>
@@ -134,7 +146,7 @@ export function ValidationQueue({ validations }: Props) {
                       size="sm"
                       variant="outline"
                       className="h-7 text-xs text-emerald-500 border-emerald-500/30 hover:bg-emerald-500/10 gap-1"
-                      onClick={() => handleApprove(v.id)}
+                      onClick={() => handleApprove(v)}
                       disabled={isReviewing}
                     >
                       <CheckCircle2 className="h-3 w-3" /> Approve

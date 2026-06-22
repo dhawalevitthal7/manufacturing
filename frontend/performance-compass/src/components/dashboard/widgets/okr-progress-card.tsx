@@ -64,9 +64,7 @@ export function OKRProgressCard({ objectives = [] }: OKRProgressCardProps) {
       <div className="flex items-center justify-between border-b border-border px-5 py-4">
         <div>
           <h3 className="text-sm font-semibold">Top Objectives</h3>
-          <p className="text-xs text-muted-foreground">
-            {objectives.length} objective{objectives.length !== 1 ? "s" : ""} in your scope
-          </p>
+          <p className="text-xs text-muted-foreground">Progress on key objectives</p>
         </div>
         <button className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
           View all <ChevronRight className="h-3 w-3" />

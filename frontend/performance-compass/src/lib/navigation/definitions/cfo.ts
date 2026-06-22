@@ -19,6 +19,6 @@ export const CFO_NAV: NavDefinition[] = [
   { group: "Finance & strategy", label: "Department OKRs", to: "/okrs?level=department", icon: Target, roles: [CFO] },
   { group: "Finance & strategy", label: "Alignment Dashboard", to: "/alignment", icon: Network, roles: [CFO] },
   { group: "Finance & strategy", label: "Review Analytics", to: "/reviews?view=analytics", icon: BarChart3, roles: [CFO] },
-  { group: "Finance & strategy", label: "Approval Queue", to: "/approvals", icon: ListChecks, roles: [CFO] },
+  { group: "Finance & strategy", label: "Functional Approvals", to: "/approvals?stage=functional", icon: ListChecks, roles: [CFO] },
   { group: "Finance & strategy", label: "AI Insights", to: "/alignment", icon: Sparkles, roles: [CFO] },
 ];

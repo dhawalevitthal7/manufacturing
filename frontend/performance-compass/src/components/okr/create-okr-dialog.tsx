@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { useState, useEffect, useMemo } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,14 +9,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   useCreateObjective, useParentOptions, usePlants, useDepartments,
-  useTeams, useEmployees,
+  useTeams, useEmployees, useOrgTree,
 } from "@/lib/hooks";
+import { flattenOrgNodes } from "@/lib/org-tree-utils";
 import { useAuthStore } from "@/lib/stores/auth-store";
+import { useUIStore } from "@/lib/stores/ui-store";
 import { api } from "@/lib/api";
 import { AIOKRChat } from "./ai-okr-chat";
 import { Bot, Plus, Sparkles, Trash2, PenLine } from "lucide-react";
-import type { ObjectiveLevel } from "@/lib/api";
-import { useQueryClient } from "@tanstack/react-query";
+import type { FunctionArea, ObjectiveLevel } from "@/lib/api";
+import { functionAreaForRole } from "@/utils/functionArea";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { parseCycleQuarterYear } from "@/lib/cycle-utils";
+import { canSetFunctionalParent } from "@/utils/okr-permissions";
 
 interface Props {
   open: boolean;
@@ -28,6 +33,9 @@ interface Props {
 
 const LEVEL_LABELS: Record<string, string> = {
   ORGANIZATION: "Organization OKR",
+  REGION: "Regional OKR",
+  VERTICAL: "Function / Vertical OKR",
+  SUB_DEPARTMENT: "Sub-Department OKR",
   PLANT: "Plant OKR",
   DEPARTMENT: "Department OKR",
   TEAM: "Team OKR",
@@ -42,34 +50,101 @@ interface InlineKR {
 }
 
 export function CreateOKRDialog({ open, onOpenChange, allowedLevels, defaultLevel, defaultPlantId }: Props) {
-  const { user } = useAuthStore();
+  const { user, permissions } = useAuthStore();
+  const { selectedCycleId } = useUIStore();
   const createObj = useCreateObjective();
   const queryClient = useQueryClient();
+  const { data: cycles = [] } = useQuery({
+    queryKey: ["cycles"],
+    queryFn: () => api.getCycles(),
+  });
 
   const [mode, setMode] = useState<"manual" | "ai">("manual");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [level, setLevel] = useState<string>(defaultLevel || allowedLevels[0] || "INDIVIDUAL");
   const [parentId, setParentId] = useState<string>("");
+  const [regionId, setRegionId] = useState<string>("");
   const [plantId, setPlantId] = useState<string>(defaultPlantId || "");
   const [deptId, setDeptId] = useState<string>("");
   const [teamId, setTeamId] = useState<string>("");
   const [ownerId, setOwnerId] = useState<string>("");
+  const [functionalParentId, setFunctionalParentId] = useState<string>("");
+  const [functionArea, setFunctionArea] = useState<string>("");
   const [inlineKRs, setInlineKRs] = useState<InlineKR[]>([]);
+
+  const { data: functionAreaCatalog } = useQuery({
+    queryKey: ["function-areas"],
+    queryFn: () => api.getFunctionAreas(),
+    enabled: open,
+  });
+
+  const selectedCycle = useMemo(
+    () => cycles.find((cycle) => cycle.id === selectedCycleId),
+    [cycles, selectedCycleId],
+  );
+  const selectedQuarterYear = parseCycleQuarterYear(selectedCycle);
 
   useEffect(() => {
     if (defaultLevel) setLevel(defaultLevel);
     if (defaultPlantId) setPlantId(defaultPlantId);
   }, [defaultLevel, defaultPlantId]);
 
+  // Clear scope fields when level changes
+  useEffect(() => {
+    if (level === "REGION") {
+      setPlantId("");
+      setDeptId("");
+      setTeamId("");
+    } else if (level === "PLANT") {
+      setDeptId("");
+      setTeamId("");
+    } else if (level === "DEPARTMENT") {
+      setTeamId("");
+    }
+  }, [level]);
+
   useEffect(() => {
     setOwnerId("");
   }, [plantId, deptId, teamId]);
 
+  const { data: orgTree } = useOrgTree(open);
+  const allRegionNodes = useMemo(
+    () =>
+      orgTree
+        ? flattenOrgNodes(orgTree).filter((n) => n.node_type === "REGION")
+        : [],
+    [orgTree],
+  );
+  const regionNodes = useMemo(() => {
+    const scopedId = permissions?.scoped_region_id;
+    if (scopedId) {
+      const match = allRegionNodes.filter((n) => n.id === scopedId);
+      if (match.length > 0) return match;
+      // Org tree may be empty for scoped users — still show their assigned region
+      return [{ id: scopedId, name: "My Region", node_type: "REGION" as const }];
+    }
+    return allRegionNodes;
+  }, [allRegionNodes, permissions?.scoped_region_id]);
+
+  useEffect(() => {
+    if (!open || level !== "REGION") return;
+    const scopedId = permissions?.scoped_region_id;
+    if (scopedId && !regionId) {
+      setRegionId(scopedId);
+    } else if (regionNodes.length === 1 && !regionId) {
+      setRegionId(regionNodes[0].id);
+    }
+  }, [open, level, permissions?.scoped_region_id, regionNodes, regionId]);
   const { data: plants = [] } = usePlants();
   const { data: departments = [] } = useDepartments(plantId || undefined);
   const { data: teams = [] } = useTeams(deptId || undefined);
-  const { data: parentOptions = [] } = useParentOptions(level, plantId || undefined, deptId || undefined);
+  const { data: parentOptions = [] } = useParentOptions(
+    level,
+    plantId || undefined,
+    deptId || undefined,
+    selectedCycleId || undefined,
+  );
   const { data: employees = [], isLoading: employeesLoading } = useEmployees(
     level === "INDIVIDUAL" && plantId && deptId
       ? {
@@ -80,10 +155,29 @@ export function CreateOKRDialog({ open, onOpenChange, allowedLevels, defaultLeve
       : undefined
   );
 
+  const needsRegion = level === "REGION";
   const needsPlant = ["PLANT", "DEPARTMENT", "TEAM", "INDIVIDUAL"].includes(level);
   const needsDept = ["DEPARTMENT", "TEAM", "INDIVIDUAL"].includes(level);
   const needsTeam = ["TEAM", "INDIVIDUAL"].includes(level);
+  const needsTeamRequired = level === "TEAM";
   const needsOwner = level === "INDIVIDUAL";
+  const showFunctionalParent = canSetFunctionalParent(level, teamId);
+  const showFunctionArea = ["VERTICAL", "SUB_DEPARTMENT"].includes(level);
+  const roleDefaultFunctionArea = functionAreaForRole(user?.system_role);
+
+  useEffect(() => {
+    if (!showFunctionArea) {
+      setFunctionArea("");
+      return;
+    }
+    if (functionArea) return;
+    if (roleDefaultFunctionArea) {
+      setFunctionArea(roleDefaultFunctionArea);
+    }
+  }, [showFunctionArea, roleDefaultFunctionArea, functionArea]);
+  const selectedTeam = (teams as { id: string; name: string; lead_id?: string }[]).find(
+    (t) => t.id === teamId,
+  );
 
   // Determine department name for AI chat
   const selectedDept = (departments as any[]).find((d: any) => d.id === deptId);
@@ -121,19 +215,44 @@ export function CreateOKRDialog({ open, onOpenChange, allowedLevels, defaultLeve
     setMode("manual"); // Switch to manual to let user review/edit
   };
 
+  useEffect(() => {
+    if (!showFunctionalParent) {
+      setFunctionalParentId("");
+    }
+  }, [showFunctionalParent]);
+
+  useEffect(() => {
+    if (level === "TEAM" && selectedTeam?.lead_id) {
+      setOwnerId(selectedTeam.lead_id);
+    }
+  }, [level, selectedTeam?.lead_id, teamId]);
+
   const handleSubmit = async () => {
     if (!title.trim()) return;
+    if (level === "INDIVIDUAL" && !ownerId) return;
+    if (needsTeamRequired && !teamId) return;
     try {
-      // Create objective
+      const teamOwnerId =
+        level === "TEAM" ? (ownerId || selectedTeam?.lead_id || user?.id) : undefined;
       const obj = await createObj.mutateAsync({
         title: title.trim(),
         description: description.trim() || undefined,
         level: level as ObjectiveLevel,
+        cycle_id: selectedCycleId || undefined,
         parent_id: parentId || undefined,
+        region_id: regionId || undefined,
         plant_id: plantId || undefined,
         department_id: deptId || undefined,
         team_id: teamId || undefined,
-        owner_id: needsOwner && ownerId ? ownerId : undefined,
+        owner_id:
+          level === "INDIVIDUAL"
+            ? ownerId
+            : level === "TEAM"
+              ? teamOwnerId
+              : undefined,
+        ...(showFunctionArea && functionArea
+          ? { function_area: functionArea as FunctionArea }
+          : {}),
       });
 
       // Create inline key results
@@ -152,8 +271,18 @@ export function CreateOKRDialog({ open, onOpenChange, allowedLevels, defaultLeve
         }
       }
 
+      // Patch functional parent
+      if (showFunctionalParent && functionalParentId && functionalParentId !== "none") {
+        try {
+          await api.patchObjectiveFunctionalParent(obj.id, { functional_parent_obj_id: functionalParentId });
+        } catch (e) {
+          console.error("Failed to patch functional parent:", e);
+        }
+      }
+
       // Invalidate queries
       queryClient.invalidateQueries({ queryKey: ["objectives"] });
+      queryClient.invalidateQueries({ queryKey: ["accessible-okrs"] });
       queryClient.invalidateQueries({ queryKey: ["progress-summary"] });
       queryClient.invalidateQueries({ queryKey: ["alignment-tree"] });
 
@@ -161,6 +290,8 @@ export function CreateOKRDialog({ open, onOpenChange, allowedLevels, defaultLeve
       setTitle("");
       setDescription("");
       setParentId("");
+      setFunctionalParentId("");
+      setFunctionArea("");
       setOwnerId("");
       setInlineKRs([]);
       onOpenChange(false);
@@ -173,6 +304,8 @@ export function CreateOKRDialog({ open, onOpenChange, allowedLevels, defaultLeve
     setTitle("");
     setDescription("");
     setParentId("");
+    setFunctionalParentId("");
+    setFunctionArea("");
     setOwnerId("");
     setInlineKRs([]);
     setMode("manual");
@@ -183,7 +316,12 @@ export function CreateOKRDialog({ open, onOpenChange, allowedLevels, defaultLeve
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto p-0">
         <DialogHeader className="px-6 pt-5 pb-3 border-b border-border/40">
           <div className="flex items-center justify-between">
-            <DialogTitle className="text-lg">Create {LEVEL_LABELS[level] || "OKR"}</DialogTitle>
+            <div>
+              <DialogTitle className="text-lg">Create {LEVEL_LABELS[level] || "OKR"}</DialogTitle>
+              <DialogDescription>
+                Set up a new OKR at the {LEVEL_LABELS[level] || "OKR"} level
+              </DialogDescription>
+            </div>
             <div className="flex items-center gap-1 bg-muted/50 rounded-lg p-0.5">
               <button
                 onClick={() => setMode("manual")}
@@ -214,8 +352,8 @@ export function CreateOKRDialog({ open, onOpenChange, allowedLevels, defaultLeve
             <AIOKRChat
               departmentName={departmentNameForAI}
               hierarchyLevel={level}
-              quarter="Q2"
-              year={2026}
+              quarter={selectedQuarterYear?.quarter ?? "Q1"}
+              year={selectedQuarterYear?.year ?? new Date().getFullYear()}
               parentObjectiveId={parentId || undefined}
               onApplySuggestion={handleAISuggestion}
               onImplemented={() => {
@@ -233,7 +371,7 @@ export function CreateOKRDialog({ open, onOpenChange, allowedLevels, defaultLeve
               {/* Level */}
               <div className="grid gap-1.5">
                 <Label>OKR Level</Label>
-                <Select value={level} onValueChange={(v) => { setLevel(v); setParentId(""); }}>
+                <Select value={level} onValueChange={(v) => { setLevel(v); setParentId(""); setRegionId(""); setPlantId(""); setDeptId(""); setTeamId(""); setFunctionArea(""); }}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {allowedLevels.map((l) => (
@@ -242,6 +380,26 @@ export function CreateOKRDialog({ open, onOpenChange, allowedLevels, defaultLeve
                   </SelectContent>
                 </Select>
               </div>
+
+              {showFunctionArea && (
+                <div className="grid gap-1.5">
+                  <Label>Corporate Function</Label>
+                  <Select value={functionArea || "none"} onValueChange={(v) => setFunctionArea(v === "none" ? "" : v)}>
+                    <SelectTrigger><SelectValue placeholder="Select function area" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">— Select function —</SelectItem>
+                      {(functionAreaCatalog?.areas ?? []).map((a) => (
+                        <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {roleDefaultFunctionArea && (
+                    <p className="text-[11px] text-muted-foreground">
+                      Defaults from your role ({roleDefaultFunctionArea.replace(/_/g, " ")}). Override if needed.
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Title */}
               <div className="grid gap-1.5">
@@ -263,6 +421,24 @@ export function CreateOKRDialog({ open, onOpenChange, allowedLevels, defaultLeve
                   rows={2}
                 />
               </div>
+
+              {/* Region selector */}
+              {needsRegion && (
+                <div className="grid gap-1.5">
+                  <Label>Region</Label>
+                  <Select value={regionId} onValueChange={setRegionId}>
+                    <SelectTrigger><SelectValue placeholder="Select region" /></SelectTrigger>
+                    <SelectContent>
+                      {regionNodes.map((r) => (
+                        <SelectItem key={r.id} value={r.id}>
+                          {r.name}
+                          {"code" in r && r.code ? ` (${r.code})` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
               {/* Plant selector */}
               {needsPlant && (
@@ -297,23 +473,36 @@ export function CreateOKRDialog({ open, onOpenChange, allowedLevels, defaultLeve
               {/* Team selector */}
               {needsTeam && deptId && (
                 <div className="grid gap-1.5">
-                  <Label>Team (optional)</Label>
+                  <Label>{needsTeamRequired ? "Team (required)" : "Team"}</Label>
                   <Select
-                    value={teamId || "__any__"}
-                    onValueChange={(v) => setTeamId(v === "__any__" ? "" : v)}
+                    value={teamId || (needsTeamRequired ? "__none__" : "__any__")}
+                    onValueChange={(v) => {
+                      setTeamId(v === "__any__" || v === "__none__" ? "" : v);
+                      setOwnerId("");
+                    }}
                   >
-                    <SelectTrigger><SelectValue placeholder="All teams in department" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder={needsTeamRequired ? "Select team" : "All teams in department"} /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="__any__">All teams in department</SelectItem>
+                      {needsTeamRequired && (
+                        <SelectItem value="__none__" disabled>Select team</SelectItem>
+                      )}
+                      {!needsTeamRequired && (
+                        <SelectItem value="__any__">All teams in department</SelectItem>
+                      )}
                       {(teams as any[]).map((t: any) => (
                         <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                  {level === "TEAM" && selectedTeam?.lead_id && (
+                    <p className="text-[10px] text-muted-foreground">
+                      Team lead will own this OKR and submit team progress.
+                    </p>
+                  )}
                 </div>
               )}
 
-              {/* Owner selector */}
+              {/* Owner selector — individual assignment */}
               {needsOwner && plantId && deptId && (
                 <div className="grid gap-1.5">
                   <Label>Assign To (Employee)</Label>
@@ -347,19 +536,44 @@ export function CreateOKRDialog({ open, onOpenChange, allowedLevels, defaultLeve
 
               {/* Parent OKR for cascading */}
               {parentOptions.length > 0 && (
-                <div className="grid gap-1.5">
-                  <Label>Align to Parent OKR (cascade)</Label>
-                  <Select value={parentId} onValueChange={setParentId}>
-                    <SelectTrigger><SelectValue placeholder="Select parent (optional)" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">— No parent —</SelectItem>
-                      {parentOptions.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>
-                          [{p.level}] {p.title} ({p.progress}%)
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <div className={`grid gap-3 ${showFunctionalParent ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1"}`}>
+                  <div className="grid gap-1.5">
+                    <Label>Align to Primary Parent OKR</Label>
+                    <Select value={parentId} onValueChange={setParentId}>
+                      <SelectTrigger><SelectValue placeholder="Select primary parent (optional)" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">— No parent —</SelectItem>
+                        {parentOptions.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            [{p.level}] {p.title} ({p.progress}%)
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {showFunctionalParent && (
+                  <div className="grid gap-1.5">
+                    <Label className="flex items-center gap-1">
+                      Functional Alignment Parent 
+                      <Badge variant="outline" className="text-[8px] h-4 px-1 py-0 uppercase">Dotted Line</Badge>
+                    </Label>
+                    <Select value={functionalParentId} onValueChange={setFunctionalParentId}>
+                      <SelectTrigger><SelectValue placeholder="Department cross-functional link (optional)" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">— No functional parent —</SelectItem>
+                        {parentOptions.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            [{p.level}] {p.title} ({p.progress}%)
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-[10px] text-muted-foreground">
+                      Only for department-level OKRs aligned to corporate functions.
+                    </p>
+                  </div>
+                  )}
                 </div>
               )}
 
@@ -443,7 +657,7 @@ export function CreateOKRDialog({ open, onOpenChange, allowedLevels, defaultLeve
               <PenLine className="h-3.5 w-3.5 mr-1" /> Switch to Manual
             </Button>
           ) : (
-            <Button onClick={handleSubmit} disabled={!title.trim() || createObj.isPending}>
+            <Button onClick={handleSubmit} disabled={!title.trim() || createObj.isPending || (needsOwner && !ownerId) || (needsTeamRequired && !teamId)}>
               {createObj.isPending ? "Creating..." : "Create OKR"}
             </Button>
           )}

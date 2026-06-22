@@ -153,13 +153,20 @@ def get_subtree(uid: str, db: Session = Depends(get_db), org_id: str = ""):
 
 @router.get("/reviewers/{uid}")
 def get_reviewers(uid: str, db: Session = Depends(get_db)):
-    """Get all REVIEWER-type relationships for an employee."""
+    """Get DOTTED_LINE and REVIEWER relationships for an employee (functional managers)."""
     rels = db.query(ReportingRelationship).filter(
         ReportingRelationship.employee_id == uid,
-        ReportingRelationship.relationship_type == "REVIEWER",
+        ReportingRelationship.relationship_type.in_(("DOTTED_LINE", "REVIEWER")),
         ReportingRelationship.is_active == True,
     ).all()
-    return [{"manager_id": r.manager_id, "name": _get_name(db, r.manager_id)} for r in rels]
+    return [
+        {
+            "manager_id": r.manager_id,
+            "name": _get_name(db, r.manager_id),
+            "relationship_type": r.relationship_type,
+        }
+        for r in rels
+    ]
 
 
 @router.get("/approvers/{uid}")

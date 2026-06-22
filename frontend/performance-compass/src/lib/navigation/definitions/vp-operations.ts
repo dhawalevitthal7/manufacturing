@@ -21,6 +21,7 @@ const VP = "VP_OPERATIONS" as const;
 /** VP Manufacturing / Operations — “Can See” list. */
 export const VP_OPERATIONS_NAV: NavDefinition[] = [
   { group: "Operations", label: "Cross-Plant Dashboard", to: "/", icon: LayoutDashboard, roles: [VP] },
+  { group: "Operations OKRs", label: "Regional OKRs", to: "/okrs?level=region", icon: Target, roles: [VP] },
   { group: "Operations OKRs", label: "Plant OKRs", to: "/okrs?level=plant", icon: Target, roles: [VP] },
   { group: "Operations", label: "Department Alignment", to: "/alignment", icon: Network, roles: [VP] },
   { group: "Operations", label: "Operational Execution Visibility", to: "/progress", icon: Gauge, roles: [VP] },

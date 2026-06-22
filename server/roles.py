@@ -28,9 +28,16 @@ class SystemRole(str, enum.Enum):
     SUPERVISOR = "SUPERVISOR"
     EMPLOYEE = "EMPLOYEE"
     HR_HEAD = "HR_HEAD"
+    CHRO = "CHRO"
+    COO = "COO"
+    CRO = "CRO"
     CFO = "CFO"
     CMO = "CMO"
+    CPO = "CPO"
+    CSO = "CSO"
     CTO = "CTO"
+    FUNCTIONAL_SUB_HEAD = "FUNCTIONAL_SUB_HEAD"
+    AREA_SALES_MANAGER = "AREA_SALES_MANAGER"
 
 
 # SUPER_ADMIN is intentionally absent: platform role, not a business hierarchy level.
@@ -39,10 +46,17 @@ ROLE_TO_BUSINESS_LEVEL: Final[Mapping[SystemRole, int]] = {
     SystemRole.CFO: 1,
     SystemRole.CMO: 1,
     SystemRole.CTO: 1,
+    SystemRole.CPO: 1,
+    SystemRole.CSO: 1,
     SystemRole.HR_HEAD: 1,
+    SystemRole.CHRO: 1,
     SystemRole.VP_OPERATIONS: 1,
+    SystemRole.COO: 1,
+    SystemRole.CRO: 1,
     SystemRole.REGIONAL_HEAD: 1,
+    SystemRole.FUNCTIONAL_SUB_HEAD: 2,
     SystemRole.PLANT_HEAD: 2,
+    SystemRole.AREA_SALES_MANAGER: 3,
     SystemRole.DEPT_HEAD: 3,
     SystemRole.MANAGER: 4,
     SystemRole.TEAM_LEAD: 5,
@@ -61,6 +75,19 @@ LEGACY_ROLE_ALIASES: Final[dict[str, SystemRole]] = {
     "FACTORY_DIRECTOR": SystemRole.PLANT_HEAD,
 }
 
+# Functional-head roles that may act as functional (dotted-line) approvers.
+FUNCTIONAL_APPROVER_ROLES: Final[frozenset[SystemRole]] = frozenset({
+    SystemRole.COO,
+    SystemRole.CRO,
+    SystemRole.CFO,
+    SystemRole.CMO,
+    SystemRole.CHRO,
+    SystemRole.HR_HEAD,
+    SystemRole.CPO,
+    SystemRole.CSO,
+    SystemRole.CTO,
+})
+
 
 def get_business_level(role: SystemRole) -> int | None:
     """Return business hierarchy level, or None for SUPER_ADMIN (no business level)."""
@@ -70,8 +97,11 @@ def get_business_level(role: SystemRole) -> int | None:
 # OKR objective levels (hierarchy API / Objective.level). Order used for API lists.
 OBJECTIVE_LEVEL_ORDER: Final[tuple[str, ...]] = (
     "ORGANIZATION",
+    "VERTICAL",
+    "REGION",
     "PLANT",
     "DEPARTMENT",
+    "SUB_DEPARTMENT",
     "TEAM",
     "INDIVIDUAL",
 )
@@ -80,18 +110,25 @@ OBJECTIVE_LEVEL_ORDER: Final[tuple[str, ...]] = (
 # SUPER_ADMIN and CEO are handled by executive bypass in can_create_objective_at_level.
 # REGIONAL_HEAD aligns with VP_OPERATIONS. CFO/CMO/CTO: corporate function heads -> DEPARTMENT only.
 ROLE_TO_ALLOWED_OBJECTIVE_LEVELS: Final[Mapping[SystemRole, frozenset[str]]] = {
-    SystemRole.VP_OPERATIONS: frozenset({"PLANT", "DEPARTMENT"}),
-    SystemRole.REGIONAL_HEAD: frozenset({"PLANT", "DEPARTMENT"}),
+    SystemRole.VP_OPERATIONS: frozenset({"REGION", "PLANT", "DEPARTMENT"}),
+    SystemRole.COO: frozenset({"ORGANIZATION", "VERTICAL", "PLANT", "DEPARTMENT"}),
+    SystemRole.CRO: frozenset({"ORGANIZATION", "VERTICAL", "REGION", "DEPARTMENT"}),
+    SystemRole.REGIONAL_HEAD: frozenset({"REGION", "PLANT", "DEPARTMENT"}),
     SystemRole.PLANT_HEAD: frozenset({"PLANT", "DEPARTMENT", "TEAM"}),
     SystemRole.DEPT_HEAD: frozenset({"DEPARTMENT", "TEAM"}),
     SystemRole.MANAGER: frozenset({"TEAM", "INDIVIDUAL"}),
     SystemRole.TEAM_LEAD: frozenset({"INDIVIDUAL"}),
     SystemRole.SUPERVISOR: frozenset({"INDIVIDUAL"}),
     SystemRole.EMPLOYEE: frozenset(),
-    SystemRole.HR_HEAD: frozenset(),
-    SystemRole.CFO: frozenset({"DEPARTMENT"}),
-    SystemRole.CMO: frozenset({"DEPARTMENT"}),
+    SystemRole.HR_HEAD: frozenset({"ORGANIZATION", "VERTICAL", "DEPARTMENT"}),
+    SystemRole.CHRO: frozenset({"ORGANIZATION", "VERTICAL", "DEPARTMENT"}),
+    SystemRole.CFO: frozenset({"ORGANIZATION", "VERTICAL", "DEPARTMENT"}),
+    SystemRole.CMO: frozenset({"ORGANIZATION", "VERTICAL", "DEPARTMENT"}),
+    SystemRole.CPO: frozenset({"ORGANIZATION", "VERTICAL"}),
+    SystemRole.CSO: frozenset({"ORGANIZATION", "VERTICAL"}),
     SystemRole.CTO: frozenset({"DEPARTMENT"}),
+    SystemRole.FUNCTIONAL_SUB_HEAD: frozenset({"VERTICAL", "SUB_DEPARTMENT"}),
+    SystemRole.AREA_SALES_MANAGER: frozenset({"TEAM", "INDIVIDUAL"}),
 }
 
 
@@ -116,6 +153,21 @@ def can_create_objective_at_level(role: SystemRole, objective_level: str) -> boo
     if role in (SystemRole.SUPER_ADMIN, SystemRole.CEO):
         return True
     return lvl in ROLE_TO_ALLOWED_OBJECTIVE_LEVELS.get(role, frozenset())
+
+
+def objective_level_to_business_level(objective_level: str) -> int | None:
+    """Map ``Objective.level`` to business hierarchy depth (see Phase 6 lifecycle)."""
+    mapping = {
+        "ORGANIZATION": 0,
+        "VERTICAL": 1,
+        "REGION": 1,
+        "PLANT": 2,
+        "DEPARTMENT": 3,
+        "SUB_DEPARTMENT": 3,
+        "TEAM": 4,
+        "INDIVIDUAL": 6,
+    }
+    return mapping.get((objective_level or "").strip().upper())
 
 
 def can_create_okr_at_level(
@@ -186,6 +238,7 @@ def normalize_role_strict(raw: str) -> SystemRole:
 
 __all__ = [
     "SystemRole",
+    "FUNCTIONAL_APPROVER_ROLES",
     "LEGACY_ROLE_ALIASES",
     "OBJECTIVE_LEVEL_ORDER",
     "ROLE_TO_ALLOWED_OBJECTIVE_LEVELS",
@@ -193,6 +246,7 @@ __all__ = [
     "allowed_objective_levels_for",
     "can_create_objective_at_level",
     "can_create_okr_at_level",
+    "objective_level_to_business_level",
     "get_business_level",
     "normalize_role",
     "normalize_role_strict",

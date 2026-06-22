@@ -20,5 +20,6 @@ export const CMO_NAV: NavDefinition[] = [
   { group: "Marketing & growth", label: "Alignment Dashboard", to: "/alignment", icon: Network, roles: [CMO] },
   { group: "Marketing & growth", label: "Review Dashboard", to: "/reviews?view=dashboard", icon: ClipboardCheck, roles: [CMO] },
   { group: "Marketing & growth", label: "Review Analytics", to: "/reviews?view=analytics", icon: BarChart3, roles: [CMO] },
+  { group: "Marketing & growth", label: "Functional Approvals", to: "/approvals?stage=functional", icon: ClipboardCheck, roles: [CMO] },
   { group: "Marketing & growth", label: "AI Insights", to: "/alignment", icon: Sparkles, roles: [CMO] },
 ];

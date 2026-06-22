@@ -1,3 +1,7 @@
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from fastapi import FastAPI, Request, Depends, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -6,6 +10,7 @@ from server.database import engine, Base, get_db
 from server.auth import decode_access_token
 from server.schema_migrations import apply_sqlite_schema_migrations
 from server.models import User, Organization
+import server.performance_review_models  # noqa: F401 — register perf review tables
 from server.routes_auth import router as auth_router
 from server.routes_org import router as org_router
 from server.routes_org_tree import router as org_tree_router
@@ -13,13 +18,19 @@ from server.routes_employees import router as emp_router
 from server.routes_okrs import router as okr_router
 from server.routes_okrs_hierarchy import router as okr_hierarchy_router
 from server.routes_okrs_ai import router as okrs_ai_router
+from server.routes_constellation import router as constellation_router
 from server.routes_teams import router as teams_router
 from server.routes_progress import router as progress_router
 from server.routes_reviews import router as review_router
+from server.routes_reviews_performance import router as review_performance_router
+from server.routes_checkins_coaching import router as checkins_coaching_router
 from server.routes_dashboard import router as dashboard_router
 from server.routes_hierarchy import router as hierarchy_router
 from server.routes_permissions import router as permissions_router
 from server.routes_permission_matrix import router as perm_matrix_router
+from server.routes_cycles import router as cycles_router
+from server.routes_integrations import router as integrations_router
+from server.routes_approvals import router as approvals_router
 import os
 
 Base.metadata.create_all(bind=engine)
@@ -80,13 +91,20 @@ app.include_router(emp_router)
 app.include_router(okr_router)
 app.include_router(okr_hierarchy_router)
 app.include_router(okrs_ai_router)
+app.include_router(constellation_router)
 app.include_router(teams_router)
 app.include_router(progress_router)
+# Performance routes must register before legacy /{review_id} catch-all
+app.include_router(checkins_coaching_router)
+app.include_router(review_performance_router)
 app.include_router(review_router)
 app.include_router(dashboard_router)
 app.include_router(hierarchy_router)
 app.include_router(permissions_router)
 app.include_router(perm_matrix_router)
+app.include_router(cycles_router)
+app.include_router(integrations_router)
+app.include_router(approvals_router)
 
 
 # --- Serve frontend ---

@@ -24,7 +24,7 @@ const levelLabel: Record<string, string> = {
   INDIVIDUAL: "Individual",
 };
 
-const levelOrder = ["ORGANIZATION", "PLANT", "DEPARTMENT", "TEAM", "INDIVIDUAL"];
+const levelOrder = ["ORGANIZATION", "REGION", "PLANT", "DEPARTMENT", "TEAM", "INDIVIDUAL"];
 
 export function AlignmentSummary({ objectives = [] }: AlignmentSummaryProps) {
   if (objectives.length === 0) {

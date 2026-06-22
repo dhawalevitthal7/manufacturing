@@ -17,6 +17,10 @@ TABLE_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("creation_approval_status", "VARCHAR(50) DEFAULT 'PENDING'"),
         ("creation_approved_by_id", "VARCHAR(255)"),
         ("creation_approved_at", "TIMESTAMP"),
+        ("creation_primary_approved_by_id", "VARCHAR(255)"),
+        ("creation_primary_approved_at", "TIMESTAMP"),
+        ("creation_functional_approved_by_id", "VARCHAR(255)"),
+        ("creation_functional_approved_at", "TIMESTAMP"),
         ("creation_approval_notes", "TEXT"),
         ("visibility_scope", "VARCHAR(50) DEFAULT 'STANDARD'"),
         ("allows_cascade", "BOOLEAN DEFAULT TRUE"),
@@ -25,6 +29,14 @@ TABLE_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("ai_generated", "BOOLEAN DEFAULT FALSE"),
         ("ai_metadata", "TEXT"),
         ("okr_status", "VARCHAR(50) DEFAULT 'DRAFT'"),
+        ("rejection_reason", "TEXT"),
+        ("pending_approver_user_id", "VARCHAR(255)"),
+        ("pending_approver_role", "VARCHAR(50)"),
+        ("kr_baseline_locked", "BOOLEAN DEFAULT FALSE"),
+        ("functional_parent_obj_id", "VARCHAR(255) REFERENCES objectives(id) ON DELETE SET NULL"),
+        ("region_id", "VARCHAR(255) REFERENCES org_nodes(id)"),
+        ("function_area", "VARCHAR(50)"),
+        ("function_node_id", "VARCHAR(255) REFERENCES org_nodes(id) ON DELETE SET NULL"),
     ],
     "progress_updates": [
         ("validation_level", "VARCHAR(50)"),
@@ -33,12 +45,52 @@ TABLE_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("approved_at", "TIMESTAMP"),
         ("auto_tracked", "BOOLEAN DEFAULT FALSE"),
         ("ai_coaching_notes", "TEXT"),
+        ("progress_source", "VARCHAR(50) DEFAULT 'MANUAL'"),
+        ("is_manual_override", "BOOLEAN DEFAULT FALSE"),
+    ],
+    "progress_submissions": [
+        # Newer approval workflow expects submissions to optionally tie to a parent objective.
+        # Older local DBs may miss this column, so add it as nullable for compatibility.
+        ("objective_id", "VARCHAR(255) REFERENCES objectives(id) ON DELETE SET NULL"),
     ],
     "users": [
         ("org_node_id", "VARCHAR(255)"),
     ],
     "user_permission_profiles": [
         ("scoped_region_id", "VARCHAR(255)"),
+    ],
+    "org_nodes": [
+        ("functional_parent_id", "VARCHAR(255) REFERENCES org_nodes(id) ON DELETE SET NULL"),
+    ],
+    "continuous_checkins": [
+        ("workflow_status", "VARCHAR(50) DEFAULT 'DRAFT'"),
+        ("acknowledged_at", "TIMESTAMP"),
+        ("acknowledged_by_user_id", "VARCHAR(36)"),
+        ("performance_concern_flag", "BOOLEAN DEFAULT FALSE"),
+        ("concern_notes", "TEXT"),
+        ("escalated_at", "TIMESTAMP"),
+        ("escalated_by_user_id", "VARCHAR(36)"),
+        ("escalation_target_user_id", "VARCHAR(36)"),
+        ("escalation_reason", "VARCHAR(50)"),
+        ("resolved_at", "TIMESTAMP"),
+        ("closed_at", "TIMESTAMP"),
+    ],
+    "employee_performance_reviews": [
+        ("dept_head_reviewer_id", "VARCHAR(36)"),
+        ("requires_dept_moderation", "BOOLEAN DEFAULT FALSE"),
+        ("ai_review_status", "VARCHAR(50) DEFAULT 'NONE'"),
+        ("ai_review_payload", "TEXT"),
+        ("ai_review_generated_at", "TIMESTAMP"),
+        ("ai_review_context_snapshot", "TEXT"),
+        ("employee_performance_narrative", "TEXT"),
+        ("promotion_recommendation", "VARCHAR(50)"),
+        ("promotion_rationale", "TEXT"),
+        ("shared_with_employee_at", "TIMESTAMP"),
+        ("submitted_to_dept_head_at", "TIMESTAMP"),
+    ],
+    "checkin_comments": [
+        ("parent_comment_id", "VARCHAR(36)"),
+        ("is_system_event", "BOOLEAN DEFAULT FALSE"),
     ],
 }
 
@@ -74,6 +126,48 @@ def apply_sqlite_schema_migrations(engine: Engine) -> None:
     
     # After all column additions, backfill org_nodes hierarchy
     _backfill_org_nodes(engine)
+    _ensure_approval_steps_table(engine)
+
+
+def _ensure_approval_steps_table(engine: Engine) -> None:
+    """Create approval_steps table on older SQLite DBs (create_all skips existing DBs)."""
+    if engine.dialect.name != "sqlite":
+        return
+
+    inspector = inspect(engine)
+    if "approval_steps" in inspector.get_table_names():
+        return
+
+    with engine.begin() as connection:
+        connection.execute(
+            text("""
+                CREATE TABLE IF NOT EXISTS approval_steps (
+                    id VARCHAR(255) PRIMARY KEY,
+                    org_id VARCHAR(255) NOT NULL REFERENCES organizations(id),
+                    subject_type VARCHAR(50) NOT NULL,
+                    subject_id VARCHAR(255) NOT NULL,
+                    sequence_order INTEGER NOT NULL DEFAULT 1,
+                    approval_type VARCHAR(50) NOT NULL,
+                    approver_id VARCHAR(255) REFERENCES users(id),
+                    approver_role VARCHAR(50),
+                    status VARCHAR(50) DEFAULT 'PENDING',
+                    decided_at TIMESTAMP,
+                    comment TEXT,
+                    created_at TIMESTAMP,
+                    updated_at TIMESTAMP,
+                    CONSTRAINT uq_approval_step_seq UNIQUE (subject_type, subject_id, sequence_order)
+                )
+            """)
+        )
+        connection.execute(
+            text("CREATE INDEX IF NOT EXISTS ix_approval_steps_org ON approval_steps(org_id)")
+        )
+        connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_approval_steps_subject "
+                "ON approval_steps(subject_type, subject_id)"
+            )
+        )
 
 
 def _backfill_org_nodes(engine: Engine) -> None:

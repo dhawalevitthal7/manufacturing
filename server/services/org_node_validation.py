@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Optional, Union
 
 from fastapi import HTTPException
+from sqlalchemy.orm import Session
 
 from server.models import NodeType, OrgNode
 
@@ -121,6 +122,74 @@ def validate_parent_child(
         return
 
     raise HTTPException(400, f"Unsupported node_type for placement rules: {ct.value}")
+
+
+def _node_has_plant_ancestor_on_solid_tree(node: OrgNode, db: Session) -> bool:
+    """True if walking ``parent_id`` from ``node`` reaches a PLANT (plant-embedded subtree)."""
+    cur_id = node.parent_id
+    while cur_id:
+        cur = db.query(OrgNode).filter(OrgNode.id == cur_id).first()
+        if not cur:
+            break
+        pk = _parent_kind(cur)
+        if pk == NodeType.PLANT:
+            return True
+        cur_id = cur.parent_id
+    return False
+
+
+def validate_functional_parent(db: Session, node: OrgNode, functional_parent_id: Optional[str]) -> None:
+    """
+    Raises HTTPException(400, ...) unless ``functional_parent_id`` is valid for ``node``.
+
+    ``None`` clears the link (always allowed). Non-``None`` values apply the Phase 4.1 matrix:
+    only DEPARTMENT / SUB_DEPARTMENT under a plant subtree; target same org;
+    CORPORATE_FUNCTION or VERTICAL; not self; target not a solid-tree descendant of ``node``.
+    """
+    if functional_parent_id is None:
+        return
+
+    fp = str(functional_parent_id).strip()
+    if not fp:
+        raise HTTPException(400, "functional_parent_id must be a non-empty string or null")
+
+    ct = _as_child_type(node.node_type)
+    if ct not in (NodeType.DEPARTMENT, NodeType.SUB_DEPARTMENT):
+        raise HTTPException(
+            400,
+            "functional_parent_id may only be set on DEPARTMENT or SUB_DEPARTMENT nodes",
+        )
+
+    if not _node_has_plant_ancestor_on_solid_tree(node, db):
+        raise HTTPException(
+            400,
+            "functional_parent_id is only allowed for nodes inside a plant subtree (solid parent chain must reach PLANT)",
+        )
+
+    target = db.query(OrgNode).filter(OrgNode.id == fp).first()
+    if not target or target.org_id != node.org_id:
+        raise HTTPException(
+            400,
+            "Functional parent must reference an existing org node in the same organization",
+        )
+
+    if target.id == node.id:
+        raise HTTPException(400, "A node cannot be its own functional parent")
+
+    from server.services.org_tree_service import is_descendant_of
+
+    if is_descendant_of(target.id, node.id, db):
+        raise HTTPException(
+            400,
+            "Functional parent cannot be a descendant of this node on the solid tree",
+        )
+
+    tt = _parent_kind(target)
+    if tt not in (NodeType.CORPORATE_FUNCTION, NodeType.VERTICAL):
+        raise HTTPException(
+            400,
+            "Functional parent must be a CORPORATE_FUNCTION or VERTICAL node",
+        )
 
 
 def validate_plant_region_parent_node(region_node: OrgNode) -> None:

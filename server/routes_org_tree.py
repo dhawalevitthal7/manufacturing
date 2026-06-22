@@ -19,9 +19,13 @@ from server.database import get_db
 from server.models import OrgNode, User, UserPermissionProfile, Organization, NodeType
 from server.schemas import OrgNodeCreate, OrgNodeUpdate, OrgNodeResponse, OrgTreeNamedNodeCreate
 from server.auth import require_super_admin
-from server.services.org_node_validation import validate_parent_child
+from server.services.org_node_validation import validate_parent_child, validate_functional_parent
 from server.services.org_tree_service import (
-    get_descendants, get_ancestors, create_child_node, build_tree_response
+    get_descendants,
+    get_ancestors,
+    create_child_node,
+    build_tree_response,
+    ensure_organization_root,
 )
 
 router = APIRouter(prefix="/api/org-tree", tags=["org-tree"])
@@ -87,6 +91,18 @@ def get_user_scope(user: User, db: Session) -> tuple:
                 anchor = db.query(OrgNode).filter(OrgNode.id == user.org_node_id).first()
                 if anchor and str(anchor.node_type) == "REGION":
                     sid = anchor.id
+            if not sid:
+                region = (
+                    db.query(OrgNode)
+                    .filter(
+                        OrgNode.org_id == user.org_id,
+                        OrgNode.node_type == "REGION",
+                        OrgNode.head_user_id == user.id,
+                    )
+                    .first()
+                )
+                if region:
+                    sid = region.id
             if sid:
                 return ("REGION", sid)
             return ("REGION", None)
@@ -129,6 +145,7 @@ def _org_node_response_dict(node: OrgNode) -> dict:
         "id": node.id,
         "org_id": node.org_id,
         "parent_id": node.parent_id,
+        "functional_parent_id": node.functional_parent_id,
         "node_type": node.node_type,
         "name": node.name,
         "code": node.code,
@@ -143,10 +160,14 @@ def _org_node_response_dict(node: OrgNode) -> dict:
 
 
 def _get_org_root_node(db: Session, org_id: str) -> OrgNode:
+    """Return org root OrgNode, creating it from Organization row if missing (e.g. new register)."""
     root = db.query(OrgNode).filter(OrgNode.id == org_id, OrgNode.org_id == org_id).first()
-    if not root:
-        raise HTTPException(404, "Organization root node not found")
-    return root
+    if root:
+        return root
+    org = db.query(Organization).filter(Organization.id == org_id).first()
+    if not org:
+        raise HTTPException(404, "Organization not found")
+    return ensure_organization_root(db, org.id, org.name)
 
 
 @router.get("")
@@ -312,6 +333,7 @@ def get_org_node(
         "id": node.id,
         "org_id": node.org_id,
         "parent_id": node.parent_id,
+        "functional_parent_id": node.functional_parent_id,
         "node_type": node.node_type,
         "name": node.name,
         "code": node.code,
@@ -328,6 +350,7 @@ def get_org_node(
                 "code": c.code,
                 "head_user_id": c.head_user_id,
                 "depth": c.depth,
+                "functional_parent_id": c.functional_parent_id,
             }
             for c in children
         ],
@@ -399,7 +422,7 @@ def update_org_node(
     """
     Update an existing org node (SUPER_ADMIN only).
     
-    Can update: name, code, head_user_id, node_metadata, parent_id (move).
+    Can update: name, code, head_user_id, node_metadata, parent_id (move), functional_parent_id.
     """
     node = db.query(OrgNode).filter(
         OrgNode.id == node_id,
@@ -408,7 +431,9 @@ def update_org_node(
     
     if not node:
         raise HTTPException(404, "Node not found")
-    
+
+    payload = req.model_dump(exclude_unset=True)
+
     # Update fields
     if req.name:
         node.name = req.name
@@ -418,8 +443,8 @@ def update_org_node(
         node.head_user_id = req.head_user_id
     if req.node_metadata is not None:
         node.node_metadata = req.node_metadata
-    
-    # Handle move (change parent)
+
+    # Handle move (change parent) before functional_parent (validation uses solid-tree ancestry).
     if req.parent_id is not None and req.parent_id != node.parent_id:
         parent = db.query(OrgNode).filter(
             OrgNode.id == req.parent_id,
@@ -427,12 +452,12 @@ def update_org_node(
         ).first()
         if not parent:
             raise HTTPException(404, "New parent node not found")
-        
+
         # Prevent moving node under itself or a descendant
         from server.services.org_tree_service import is_descendant_of
         if req.parent_id == node_id or is_descendant_of(req.parent_id, node_id, db):
             raise HTTPException(400, "Cannot move node under itself or a descendant")
-        
+
         # Perform the move
         try:
             from server.services.org_tree_service import move_node
@@ -443,25 +468,16 @@ def update_org_node(
         except Exception as e:
             db.rollback()
             raise HTTPException(400, f"Failed to move node: {str(e)}")
-    
+
+    if "functional_parent_id" in payload:
+        db.refresh(node)
+        validate_functional_parent(db, node, payload["functional_parent_id"])
+        node.functional_parent_id = payload["functional_parent_id"]
+
     db.commit()
     db.refresh(node)
-    
-    return {
-        "id": node.id,
-        "org_id": node.org_id,
-        "parent_id": node.parent_id,
-        "node_type": node.node_type,
-        "name": node.name,
-        "code": node.code,
-        "head_user_id": node.head_user_id,
-        "path": node.path,
-        "depth": node.depth,
-        "node_metadata": node.node_metadata or {},
-        "is_active": node.is_active,
-        "created_at": node.created_at.isoformat(),
-        "updated_at": node.updated_at.isoformat(),
-    }
+
+    return _org_node_response_dict(node)
 
 
 @router.delete("/{node_id}")

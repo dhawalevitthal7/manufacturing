@@ -1,0 +1,136 @@
+================================================================================
+                    ULTRATECH CEMENT MANUFACTURING
+                        ORGANIZATIONAL STRUCTURE
+================================================================================
+
+CORPORATE HIERARCHY
+================================================================================
+
+CORPORATE LEVEL
+│
+├─ 1 Super Admin (admin@ultratech.com)
+└─ 1 CEO (ceo@ultratech.com)
+    │
+    ├─ 4 REGIONS (VP Operations heads)
+    │   ├─ North Region (northhead@ultratech.com)
+    │   ├─ South Region (southhead@ultratech.com)
+    │   ├─ East Region (easthead@ultratech.com)
+    │   └─ West Region (westhead@ultratech.com)
+    │       │
+    │       └─ 2 PLANTS PER REGION (8 Total)
+    │           └─ 5 DEPARTMENTS PER PLANT (40 Total)
+    │               ├─ Production
+    │               ├─ Quality Assurance
+    │               ├─ Maintenance & Engineering
+    │               ├─ Administration
+    │               └─ Human Resources
+    │                   │
+    │                   ├─ 2-3 TEAMS PER DEPT (80+ Total)
+    │                   │   │
+    │                   │   ├─ Managers (160+)
+    │                   │   ├─ Supervisors (320+)
+    │                   │   └─ Employees (400+)
+
+
+REGIONS & PLANTS (8 TOTAL)
+================================================================================
+
+NORTH REGION (Head: northhead@ultratech.com)
+    - Sutlej Plant (PLT-NTH-001) - Head: sutlejplanthead@ultratech.com
+    - Himachal Plant (PLT-NTH-002) - Head: himachalplanthead@ultratech.com
+
+SOUTH REGION (Head: southhead@ultratech.com)
+    - Karnataka Plant (PLT-STH-001) - Head: karnatakaplanthead@ultratech.com
+    - Tamil Nadu Plant (PLT-STH-002) - Head: tamilnaduplanthead@ultratech.com
+
+EAST REGION (Head: easthead@ultratech.com)
+    - Odisha Plant (PLT-EST-001) - Head: odishaplanthead@ultratech.com
+    - Jharkhand Plant (PLT-EST-002) - Head: jharkhandplanthead@ultratech.com
+
+WEST REGION (Head: westhead@ultratech.com)
+    - Gujarat Plant (PLT-WST-001) - Head: gujaratplanthead@ultratech.com
+    - Rajasthan Plant (PLT-WST-002) - Head: rajasthanplanthead@ultratech.com
+
+
+USER DISTRIBUTION BY ROLE
+================================================================================
+
+Role                        | Count   | Example Email
+--------------------------------|---------|-----------------------------------------------
+Super Admin                 | 1       | admin@ultratech.com
+CEO                         | 1       | ceo@ultratech.com
+VP Operations (Regional)    | 4       | northhead@ultratech.com
+Plant Heads                 | 8       | sutlejplanthead@ultratech.com
+Department Heads            | 40      | sutlejplantproductionhead@ultratech.com
+Team Leads                  | 80+     | sutlejplantproductiontl1@ultratech.com
+Managers                    | 160+    | sutlejplantproductionTeam1mgr@ultratech.com
+Supervisors                 | 320+    | sutlejplantproductionTeam1sup1@ultratech.com
+Employees                   | 400+    | sutlejplantproductionemp1@ultratech.com
+================================================================================
+TOTAL USERS                 | 600+    |
+================================================================================
+
+
+DEPARTMENT TYPES (5 PER PLANT)
+================================================================================
+
+1. Production
+   - Focuses on manufacturing targets and output
+
+2. Quality Assurance
+   - Ensures quality standards and compliance
+
+3. Maintenance & Engineering
+   - Equipment uptime and reliability
+
+4. Administration
+   - Administrative and operational support
+
+5. Human Resources
+   - HR and people management
+
+
+OKR STRUCTURE (500+ TOTAL)
+================================================================================
+
+Organization Level:    1 OKR (CEO)
+Regional Level:        4 OKRs (Regional heads)
+Plant Level:           8 OKRs (Plant heads)
+Department Level:      40 OKRs (Dept heads)
+Team Level:            80+ OKRs (Team leads)
+Individual Level:      400+ OKRs (Employees)
+
+TOTAL OKRs:            500+
+
+
+QUICK TEST LOGINS (Password: 123)
+================================================================================
+
+Admin:                 admin@ultratech.com
+CEO:                   ceo@ultratech.com
+Region Head:           northhead@ultratech.com
+Plant Head:            sutlejplanthead@ultratech.com
+Dept Head:             sutlejplantproductionhead@ultratech.com
+Team Lead:             sutlejplantproductiontl1@ultratech.com
+Manager:               sutlejplantproductionTeam1mgr@ultratech.com
+Supervisor:            sutlejplantproductionTeam1sup1@ultratech.com
+Employee:              sutlejplantproductionemp1@ultratech.com
+
+
+STATISTICS
+================================================================================
+
+Total Organizations:       1 (UltraTech Cement)
+Total Regions:             4
+Total Plants:              8
+Total Departments:         40
+Total Teams:               80+
+Total Users:               600+
+Total OKRs:                500+
+
+Email Format:              {identifier}@ultratech.com
+All Passwords:             123
+Industry:                  Manufacturing - Cement
+Domain:                    ultratech.com
+
+================================================================================

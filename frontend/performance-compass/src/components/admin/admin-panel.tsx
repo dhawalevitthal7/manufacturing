@@ -13,6 +13,10 @@ import {
 } from "@/lib/hooks";
 import { api, type PlantCreate } from "@/lib/api";
 import { flattenOrgNodes } from "@/lib/org-tree-utils";
+import {
+  onboardScopeNeedsField,
+  onboardRequiredFields,
+} from "@/lib/onboard-scope";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -42,7 +46,10 @@ import {
   AlertCircle,
   Factory,
   Loader2,
+  Calendar,
 } from "lucide-react";
+
+import { CyclesAdmin } from "@/components/admin/cycles-admin";
 
 export function AdminPanel() {
   const { hasCapability, permissions, user, getToken } = useAuthStore();
@@ -71,12 +78,6 @@ export function AdminPanel() {
 
   const { data: deptsForSelectedPlant = [] } = useDepartments(selectedPlantForTeam || undefined);
   
-  // Onboarding cascade state
-  const [onboardPlant, setOnboardPlant] = useState("");
-  const [onboardDept, setOnboardDept] = useState("");
-  const { data: onboardDepts = [] } = useDepartments(onboardPlant || undefined);
-  const { data: onboardTeams = [] } = useTeams(onboardDept || undefined);
-
   // Onboarding form state
   const [onboardingData, setOnboardingData] = useState({
     email: "",
@@ -87,6 +88,36 @@ export function AdminPanel() {
     designation_id: "",
     team: "",
   });
+
+  const [onboardRegion, setOnboardRegion] = useState("");
+  const [onboardPlant, setOnboardPlant] = useState("");
+  const [onboardDept, setOnboardDept] = useState("");
+  const { data: onboardDepts = [] } = useDepartments(onboardPlant || undefined);
+  const { data: onboardTeams = [] } = useTeams(onboardDept || undefined);
+
+  const flatOrgNodes = useMemo(() => (orgTree ? flattenOrgNodes(orgTree) : []), [orgTree]);
+
+  const plantsForOnboard = useMemo(() => {
+    if (!onboardScopeNeedsField(onboardingData.role, "plant")) return [];
+    if (regionNodes.length > 0 && onboardRegion) {
+      const plantIds = new Set(
+        flatOrgNodes
+          .filter((n) => n.node_type === "PLANT" && n.parent_id === onboardRegion)
+          .map((n) => n.id),
+      );
+      return plants.filter((p: { id: string }) => plantIds.has(p.id));
+    }
+    return plants;
+  }, [flatOrgNodes, onboardRegion, plants, regionNodes.length, onboardingData.role]);
+
+  const showRegionField =
+    regionNodes.length > 0 && onboardScopeNeedsField(onboardingData.role, "region");
+  const showPlantField = onboardScopeNeedsField(onboardingData.role, "plant");
+  const showDeptField =
+    onboardScopeNeedsField(onboardingData.role, "department") && !!onboardPlant;
+  const showTeamField =
+    onboardScopeNeedsField(onboardingData.role, "team") && !!onboardDept;
+  const scopeRequired = onboardRequiredFields(onboardingData.role, regionNodes.length > 0);
 
   // Create forms
   const [plantName, setPlantName] = useState("");
@@ -108,8 +139,24 @@ export function AdminPanel() {
   const createTeamMutation = useCreateTeam();
 
   // Reset cascading selects when parent changes
-  useEffect(() => { setOnboardDept(""); setOnboardingData(d => ({ ...d, team: "" })); }, [onboardPlant]);
-  useEffect(() => { setOnboardingData(d => ({ ...d, team: "" })); }, [onboardDept]);
+  useEffect(() => {
+    setOnboardRegion("");
+    setOnboardPlant("");
+    setOnboardDept("");
+    setOnboardingData((d) => ({ ...d, team: "" }));
+  }, [onboardingData.role]);
+  useEffect(() => {
+    setOnboardPlant("");
+    setOnboardDept("");
+    setOnboardingData((d) => ({ ...d, team: "" }));
+  }, [onboardRegion]);
+  useEffect(() => {
+    setOnboardDept("");
+    setOnboardingData((d) => ({ ...d, team: "" }));
+  }, [onboardPlant]);
+  useEffect(() => {
+    setOnboardingData((d) => ({ ...d, team: "" }));
+  }, [onboardDept]);
   useEffect(() => { setSelectedDeptForTeam(""); }, [selectedPlantForTeam]);
   useEffect(() => {
     setTeamMemberIds(new Set());
@@ -141,6 +188,28 @@ export function AdminPanel() {
       return;
     }
 
+    const required = onboardRequiredFields(onboardingData.role, regionNodes.length > 0);
+    if (required.includes("region") && !onboardRegion) {
+      setErrorMessage("Please select a region");
+      setLoading(false);
+      return;
+    }
+    if (required.includes("plant") && !onboardPlant) {
+      setErrorMessage("Please select a plant");
+      setLoading(false);
+      return;
+    }
+    if (required.includes("department") && !onboardDept) {
+      setErrorMessage("Please select a department");
+      setLoading(false);
+      return;
+    }
+    if (required.includes("team") && !onboardingData.team) {
+      setErrorMessage("Please select a team");
+      setLoading(false);
+      return;
+    }
+
     try {
       const token = getToken();
       if (!token) { setErrorMessage("Not authenticated"); setLoading(false); return; }
@@ -153,6 +222,7 @@ export function AdminPanel() {
           name: onboardingData.name,
           password: onboardingData.password,
           system_role: onboardingData.role,
+          region_id: onboardRegion || null,
           plant_id: onboardPlant || null,
           department_id: onboardDept || null,
           team_id: onboardingData.team || null,
@@ -164,7 +234,9 @@ export function AdminPanel() {
 
       setSuccessMessage(`Employee "${onboardingData.name}" onboarded successfully!`);
       setOnboardingData({ email: "", name: "", password: "", confirmPassword: "", role: "EMPLOYEE", designation_id: "", team: "" });
-      setOnboardPlant(""); setOnboardDept("");
+      setOnboardRegion("");
+      setOnboardPlant("");
+      setOnboardDept("");
     } catch (error) {
       setErrorMessage(`Failed to onboard: ${error}`);
     } finally {
@@ -289,6 +361,7 @@ export function AdminPanel() {
                     <SelectItem value="TEAM_LEAD">Team Lead</SelectItem>
                     <SelectItem value="DEPT_HEAD">Department Head</SelectItem>
                     <SelectItem value="PLANT_HEAD">Plant Head</SelectItem>
+                    <SelectItem value="REGIONAL_HEAD">Region Head</SelectItem>
                     <SelectItem value="VP_OPERATIONS">VP Operations</SelectItem>
                     <SelectItem value="CEO">CEO</SelectItem>
                   </SelectContent>
@@ -306,36 +379,72 @@ export function AdminPanel() {
                   </Select>
                 </div>
               )}
-              <div>
-                <label className="text-xs font-medium">Plant</label>
-                <Select value={onboardPlant || "none"} onValueChange={(v) => setOnboardPlant(v === "none" ? "" : v)}>
-                  <SelectTrigger className="mt-1"><SelectValue placeholder="Select plant" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No Plant Scope</SelectItem>
-                    {plants.map((p: any) => <SelectItem key={p.id} value={p.id}>{p.name}{p.location ? ` · ${p.location}` : ""}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              {onboardPlant && (
+              {showRegionField && (
                 <div>
-                  <label className="text-xs font-medium">Department</label>
-                  <Select value={onboardDept || "none"} onValueChange={(v) => setOnboardDept(v === "none" ? "" : v)}>
-                    <SelectTrigger className="mt-1"><SelectValue placeholder="Select department" /></SelectTrigger>
+                  <label className="text-xs font-medium">
+                    Region{scopeRequired.includes("region") ? " *" : ""}
+                  </label>
+                  <Select value={onboardRegion || "none"} onValueChange={(v) => setOnboardRegion(v === "none" ? "" : v)}>
+                    <SelectTrigger className="mt-1"><SelectValue placeholder="Select region" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">No Department Scope</SelectItem>
-                      {onboardDepts.map((d: any) => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
+                      <SelectItem value="none">Select a region</SelectItem>
+                      {regionNodes.map((r) => (
+                        <SelectItem key={r.id} value={r.id}>
+                          {r.name}
+                          {r.code ? ` (${r.code})` : ""}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
               )}
-              {onboardDept && (
+              {showPlantField && (!showRegionField || onboardRegion) && (
                 <div>
-                  <label className="text-xs font-medium">Team</label>
+                  <label className="text-xs font-medium">
+                    Plant{scopeRequired.includes("plant") ? " *" : ""}
+                  </label>
+                  <Select value={onboardPlant || "none"} onValueChange={(v) => setOnboardPlant(v === "none" ? "" : v)}>
+                    <SelectTrigger className="mt-1"><SelectValue placeholder="Select plant" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Select a plant</SelectItem>
+                      {plantsForOnboard.map((p: { id: string; name: string; location?: string }) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.name}
+                          {p.location ? ` · ${p.location}` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {showDeptField && (
+                <div>
+                  <label className="text-xs font-medium">
+                    Department{scopeRequired.includes("department") ? " *" : ""}
+                  </label>
+                  <Select value={onboardDept || "none"} onValueChange={(v) => setOnboardDept(v === "none" ? "" : v)}>
+                    <SelectTrigger className="mt-1"><SelectValue placeholder="Select department" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Select a department</SelectItem>
+                      {onboardDepts.map((d: { id: string; name: string }) => (
+                        <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {showTeamField && (
+                <div>
+                  <label className="text-xs font-medium">
+                    Team{scopeRequired.includes("team") ? " *" : ""}
+                  </label>
                   <Select value={onboardingData.team || "none"} onValueChange={(v) => setOnboardingData({ ...onboardingData, team: v === "none" ? "" : v })}>
                     <SelectTrigger className="mt-1"><SelectValue placeholder="Select team" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">No Team Scope</SelectItem>
-                      {onboardTeams.map((t: any) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+                      <SelectItem value="none">Select a team</SelectItem>
+                      {onboardTeams.map((t: { id: string; name: string }) => (
+                        <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -534,6 +643,13 @@ export function AdminPanel() {
               </DialogContent>
             </Dialog>
           </div>
+        </AdminSection>
+      )}
+
+      {/* Cycle Management */}
+      {hasCapability("can_configure_permissions") && (
+        <AdminSection icon={Calendar} title="Cycle Management" description="Manage OKR cycles (create, freeze, close)">
+          <CyclesAdmin />
         </AdminSection>
       )}
 

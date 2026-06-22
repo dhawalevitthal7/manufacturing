@@ -103,6 +103,32 @@ def is_descendant_of(child_id: str, ancestor_id: str, db: Session) -> bool:
     return child.path.startswith(f"{ancestor.path}.")
 
 
+def ensure_organization_root(db: Session, org_id: str, org_name: str) -> OrgNode:
+    """
+    Ensure the ORGANIZATION root OrgNode exists (id == org_id).
+    Idempotent — safe to call on register and before region/plant creation.
+    """
+    root = db.query(OrgNode).filter(
+        OrgNode.id == org_id,
+        OrgNode.org_id == org_id,
+        OrgNode.node_type == "ORGANIZATION",
+    ).first()
+    if root:
+        return root
+
+    node = create_child_node(
+        parent_id=None,
+        node_type="ORGANIZATION",
+        name=org_name,
+        org_id=org_id,
+        db=db,
+        node_id=org_id,
+    )
+    db.add(node)
+    db.flush()
+    return node
+
+
 def create_child_node(
     parent_id: Optional[str],
     node_type: str,
@@ -313,6 +339,7 @@ def build_tree_response(nodes: List[OrgNode], node_map: dict = None) -> dict:
             "id": node.id,
             "org_id": node.org_id,
             "parent_id": node.parent_id,
+            "functional_parent_id": node.functional_parent_id,
             "node_type": node.node_type,
             "name": node.name,
             "code": node.code,

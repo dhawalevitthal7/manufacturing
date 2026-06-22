@@ -16,12 +16,15 @@ from sqlalchemy import and_, or_
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 import json
+import logging
 import uuid
+
+logger = logging.getLogger(__name__)
 
 from server.database import get_db
 from server.models import (
     ProgressSubmission, ProgressUpdate, KeyResult, Objective, User, ReviewCycle,
-    Team, Department, Plant, ReportingRelationship, TeamMember,
+    Team, Department, Plant, ReportingRelationship, TeamMember, UserPermissionProfile,
 )
 from server.schemas import (
     ProgressUpdateCreate, ProgressValidation, 
@@ -30,6 +33,26 @@ from server.schemas import (
 from server.okr_cascade_service import (
     OKRCascadeService, calculate_kr_progress, score_to_rating
 )
+from server.okr_hierarchy_workflow import OKRHierarchyWorkflow
+from server.services.okr_progress_permissions import can_submit_okr_progress
+from server.services.okr_visibility_service import (
+    apply_okr_visibility_filter,
+    apply_optional_scope_narrowing,
+    get_user_okr_scope,
+)
+from server.services.dual_approval_service import (
+    SUBJECT_PROGRESS_SUBMISSION,
+    STEP_LINE,
+    STEP_FUNCTIONAL,
+    DualApprovalError,
+    build_chain,
+    chain_status,
+    approve_current_step_for_subject,
+    reject_current_step_for_subject,
+    pending_subject_ids_for_approver,
+    current_step,
+)
+from server.roles import FUNCTIONAL_APPROVER_ROLES, normalize_role
 
 router = APIRouter(prefix="/api/progress", tags=["progress"])
 
@@ -60,30 +83,117 @@ def _team_scope_ids_for_validator(db: Session, user: User) -> list[str]:
     return ids
 
 
+def _primary_approver_role_for_level(level: str) -> str:
+    """Who must approve progress at each OKR level (one step up the cascade)."""
+    return {
+        "INDIVIDUAL": "MANAGER",
+        "TEAM": "DEPT_HEAD",
+        "DEPARTMENT": "PLANT_HEAD",
+        "PLANT": "VP_OPERATIONS",
+        "REGION": "CEO",
+        "ORGANIZATION": "CEO",
+    }.get((level or "").upper(), "MANAGER")
+
+
+def _user_covers_region(db: Session, user: User, region_id: str) -> bool:
+    if not region_id or not user:
+        return False
+    if user.org_node_id == region_id:
+        return True
+    profile = (
+        db.query(UserPermissionProfile)
+        .filter(UserPermissionProfile.user_id == user.id)
+        .first()
+    )
+    if profile and profile.scoped_region_id == region_id:
+        return True
+    return False
+
+
 def _user_can_validate_progress_submission(
     db: Session,
     reviewer: User,
     objective: Objective,
     submitter_id: str,
 ) -> bool:
-    """Managers and designated team leads can validate employee progress on scoped OKRs."""
+    """
+    Hierarchical progress validation:
+    - Individual/Team → Manager / Dept Head
+    - Department → Plant Head (same plant)
+    - Plant → Regional Head (VP, same region)
+    - Region → CEO
+    """
     if not reviewer or not objective:
         return False
     if submitter_id and submitter_id != "system" and submitter_id == reviewer.id:
         return False
 
-    if reviewer.system_role in ("CEO", "VP_OPERATIONS"):
+    level = (objective.level or "").upper()
+    role = reviewer.system_role
+
+    if role == "SUPER_ADMIN":
         return True
 
-    if reviewer.system_role == "PLANT_HEAD" and objective.plant_id and reviewer.plant_id == objective.plant_id:
-        return True
+    # Executive levels: CEO validates region/org progress
+    if level in ("REGION", "ORGANIZATION"):
+        submitter = (
+            db.query(User).filter(User.id == submitter_id).first()
+            if submitter_id and submitter_id != "system"
+            else None
+        )
+        if level == "REGION" and submitter and submitter.system_role == "REGIONAL_HEAD":
+            if role == "CRO":
+                return reviewer.org_id == objective.org_id
+            if role in ("CEO", "SUPER_ADMIN"):
+                return reviewer.org_id == objective.org_id
+            return False
+        if role in ("CEO", "CFO", "CMO", "CTO"):
+            return reviewer.org_id == objective.org_id
+        return False
 
-    if (
-        reviewer.system_role == "DEPT_HEAD"
-        and objective.department_id
-        and reviewer.department_id == objective.department_id
-    ):
-        return True
+    # Plant-level OKR progress from Plant Head → COO; others unchanged
+    if level == "PLANT":
+        submitter = (
+            db.query(User).filter(User.id == submitter_id).first()
+            if submitter_id and submitter_id != "system"
+            else None
+        )
+        if submitter and submitter.system_role == "PLANT_HEAD":
+            if role == "COO":
+                return reviewer.org_id == objective.org_id
+            if role in ("CEO", "SUPER_ADMIN"):
+                return reviewer.org_id == objective.org_id
+            return False
+        if role in ("VP_OPERATIONS", "VP_MANUFACTURING", "REGIONAL_HEAD"):
+            if objective.region_id:
+                return _user_covers_region(db, reviewer, objective.region_id)
+            return reviewer.org_id == objective.org_id
+        if role == "PLANT_HEAD" and objective.plant_id and reviewer.plant_id == objective.plant_id:
+            return True
+        if role == "CEO":
+            return reviewer.org_id == objective.org_id
+        return False
+
+    # Department-level → plant head of that plant
+    if level == "DEPARTMENT":
+        if role == "PLANT_HEAD" and objective.plant_id and reviewer.plant_id == objective.plant_id:
+            return True
+        if role in ("VP_OPERATIONS", "VP_MANUFACTURING", "CEO"):
+            if objective.region_id and role in ("VP_OPERATIONS", "VP_MANUFACTURING"):
+                return _user_covers_region(db, reviewer, objective.region_id)
+            return role == "CEO" and reviewer.org_id == objective.org_id
+        return False
+
+    # Team / individual: use workflow (manager, dept head, plant head in chain)
+    if submitter_id and submitter_id != "system":
+        submitter = db.query(User).filter(User.id == submitter_id).first()
+        if submitter:
+            wf = OKRHierarchyWorkflow(db)
+            ok_align, _ = wf.can_validate_progress_including_functional_alignment(
+                reviewer, objective, submitter
+            )
+            if ok_align:
+                return True
 
     tid = objective.team_id
     if not tid:
@@ -115,12 +225,95 @@ def _user_can_validate_progress_submission(
     return False
 
 
+def _user_can_review_progress_submission(
+    db: Session,
+    reviewer: User,
+    submission: ProgressSubmission,
+    objective: Objective,
+) -> bool:
+    """
+    Who may approve/reject a ProgressSubmission.
+
+    LINE step: assigned line approver (team lead) OR any manager/dept head in the
+    submitter's hierarchy chain (same team/dept/plant rules).
+    FUNCTIONAL step: only the assigned functional-head approver on that step.
+    """
+    step = current_step(db, SUBJECT_PROGRESS_SUBMISSION, submission.id)
+    if step:
+        if step.approver_id and step.approver_id == reviewer.id:
+            return True
+        if step.approval_type == STEP_LINE:
+            return _user_can_validate_progress_submission(
+                db, reviewer, objective, submission.submitted_by_id or ""
+            )
+        return False
+    return _user_can_validate_progress_submission(
+        db, reviewer, objective, submission.submitted_by_id or ""
+    )
+
+
+def _pending_item_from_update(update: ProgressUpdate, db: Session) -> Optional[dict]:
+    kr = db.query(KeyResult).filter(KeyResult.id == update.key_result_id).first()
+    if not kr:
+        return None
+    obj = db.query(Objective).filter(Objective.id == kr.objective_id).first()
+    if not obj:
+        return None
+    submitter = db.query(User).filter(User.id == update.submitted_by_id).first()
+    return {
+        "id": update.id,
+        "key_result_id": update.key_result_id,
+        "key_result_title": kr.title,
+        "objective_id": obj.id,
+        "objective_title": obj.title,
+        "objective_level": obj.level,
+        "submitted_by": submitter.name if submitter else None,
+        "submitted_by_id": update.submitted_by_id,
+        "previous_value": update.previous_value,
+        "new_value": update.new_value,
+        "notes": update.notes,
+        "blockers": update.blockers,
+        "status": update.status,
+        "created_at": update.created_at.isoformat() if update.created_at else None,
+        "source": "legacy_update",
+    }
+
+
+def _pending_item_from_submission(submission: ProgressSubmission, db: Session) -> Optional[dict]:
+    if not submission.key_result_id:
+        return None
+    kr = db.query(KeyResult).filter(KeyResult.id == submission.key_result_id).first()
+    if not kr:
+        return None
+    obj = db.query(Objective).filter(Objective.id == kr.objective_id).first()
+    if not obj:
+        return None
+    submitter = db.query(User).filter(User.id == submission.submitted_by_id).first()
+    return {
+        "id": submission.id,
+        "key_result_id": submission.key_result_id,
+        "key_result_title": kr.title,
+        "objective_id": obj.id,
+        "objective_title": obj.title,
+        "objective_level": obj.level,
+        "submitted_by": submitter.name if submitter else None,
+        "submitted_by_id": submission.submitted_by_id,
+        "previous_value": kr.current_value,
+        "new_value": submission.employee_value,
+        "notes": submission.employee_note,
+        "blockers": None,
+        "status": submission.status,
+        "created_at": submission.created_at.isoformat() if submission.created_at else None,
+        "source": "submission",
+    }
+
+
 def _get_submission_dict(submission: ProgressSubmission, db: Session) -> dict:
     """Serialize a progress submission to dict."""
     submitter = db.query(User).filter(User.id == submission.submitted_by_id).first()
     reviewer = db.query(User).filter(User.id == submission.reviewed_by_id).first() if submission.reviewed_by_id else None
     
-    return {
+    payload = {
         "id": submission.id,
         "key_result_id": submission.key_result_id,
         "submitted_by": submitter.name if submitter else None,
@@ -137,6 +330,10 @@ def _get_submission_dict(submission: ProgressSubmission, db: Session) -> dict:
         "created_at": submission.created_at.isoformat() if submission.created_at else None,
         "reviewed_at": submission.reviewed_at.isoformat() if submission.reviewed_at else None,
     }
+    payload["approval_chain_status"] = chain_status(
+        db, SUBJECT_PROGRESS_SUBMISSION, submission.id
+    )
+    return payload
 
 
 def _determine_next_approver(
@@ -204,30 +401,47 @@ def submit_progress(
     objective = db.query(Objective).filter(Objective.id == kr.objective_id).first()
     if not objective:
         raise HTTPException(status_code=404, detail="Objective not found")
+        
+    # Check if cycle is frozen
+    if objective.cycle_id:
+        from server.models import Cycle
+        cycle = db.query(Cycle).filter(Cycle.id == objective.cycle_id).first()
+        if cycle and cycle.status in ("FROZEN", "CLOSED"):
+            raise HTTPException(
+                status_code=409, 
+                detail=f"Cannot submit progress: The cycle '{cycle.name}' is currently {cycle.status}."
+            )
     
-    # Verify user can submit (owner or manager)
     user = db.query(User).filter(User.id == user_id).first()
-    is_owner = objective.owner_id == user_id
-    is_manager = user and user.system_role in ["CEO", "MANAGER", "DEPT_HEAD", "PLANT_HEAD", "VP_OPERATIONS"]
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    can_submit, submit_reason = can_submit_okr_progress(user, objective, db)
+    if not can_submit:
+        raise HTTPException(status_code=403, detail=submit_reason)
     
-    if not (is_owner or is_manager):
-        raise HTTPException(
-            status_code=403, 
-            detail="Not authorized to submit progress for this OKR"
-        )
-    
+    approver_role = _primary_approver_role_for_level(objective.level)
+
     # Create progress submission
     submission = ProgressSubmission(
         id=str(uuid.uuid4()),
         key_result_id=req.key_result_id,
+        objective_id=objective.id,
         submitted_by_id=user_id,
         employee_value=req.employee_value,
         employee_note=req.employee_note,
         status="PENDING",
-        validation_level="MANAGER",  # First level of validation
+        validation_level=approver_role,
+        next_approver_role=approver_role,
     )
     
     db.add(submission)
+    db.flush()
+    try:
+        build_chain(db, org_id, SUBJECT_PROGRESS_SUBMISSION, submission.id, user_id)
+    except DualApprovalError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     db.commit()
     db.refresh(submission)
     
@@ -241,6 +455,7 @@ def get_pending_submissions(
     user_id: str = "",
     team_id: Optional[str] = Query(None),
     department_id: Optional[str] = Query(None),
+    stage: Optional[str] = Query(None, description="line | functional"),
 ):
     """
     Pending progress submissions the current user is allowed to validate
@@ -249,6 +464,42 @@ def get_pending_submissions(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    approval_type = None
+    if stage:
+        st = stage.strip().lower()
+        if st == "line":
+            approval_type = STEP_LINE
+        elif st == "functional":
+            approval_type = STEP_FUNCTIONAL
+        else:
+            raise HTTPException(status_code=400, detail="stage must be line or functional")
+
+    # Items where this user is the current dual-approval step assignee (CMO, CFO, etc.)
+    direct_ids = set(
+        pending_subject_ids_for_approver(
+            db,
+            org_id,
+            user_id,
+            SUBJECT_PROGRESS_SUBMISSION,
+            approval_type=approval_type,
+        )
+    )
+
+    user_role = normalize_role(user.system_role)
+    is_functional_head = user_role in FUNCTIONAL_APPROVER_ROLES
+    if approval_type == STEP_FUNCTIONAL or (is_functional_head and approval_type is None):
+        if not direct_ids:
+            return []
+        submissions = (
+            db.query(ProgressSubmission)
+            .filter(ProgressSubmission.id.in_(list(direct_ids)))
+            .order_by(ProgressSubmission.created_at.desc())
+            .all()
+        )
+        return [_get_submission_dict(s, db) for s in submissions]
+
+    visible_ids = set(direct_ids)
 
     query = (
         db.query(ProgressSubmission)
@@ -285,23 +536,34 @@ def get_pending_submissions(
 
             if scope_parts:
                 query = query.filter(or_(*scope_parts))
-            else:
+            elif not visible_ids:
                 return []
 
     submissions = query.order_by(ProgressSubmission.created_at.desc()).all()
 
-    visible: list[ProgressSubmission] = []
     for s in submissions:
+        if s.id in visible_ids:
+            continue
         kr = db.query(KeyResult).filter(KeyResult.id == s.key_result_id).first()
         if not kr:
             continue
         obj = db.query(Objective).filter(Objective.id == kr.objective_id).first()
         if not obj:
             continue
-        if _user_can_validate_progress_submission(db, user, obj, s.submitted_by_id):
-            visible.append(s)
+        if not _user_can_review_progress_submission(db, user, s, obj):
+            continue
+        visible_ids.add(s.id)
 
-    return [_get_submission_dict(s, db) for s in visible]
+    if not visible_ids:
+        return []
+
+    ordered = (
+        db.query(ProgressSubmission)
+        .filter(ProgressSubmission.id.in_(list(visible_ids)))
+        .order_by(ProgressSubmission.created_at.desc())
+        .all()
+    )
+    return [_get_submission_dict(s, db) for s in ordered]
 
 
 @router.post("/submissions/{submission_id}/review", response_model=ProgressSubmissionResponse)
@@ -355,11 +617,32 @@ def review_progress_submission(
     if submission.key_result_id and objective_for_auth is None:
         raise HTTPException(status_code=400, detail="Key result not found for this submission")
 
-    if objective_for_auth:
-        if not _user_can_validate_progress_submission(
+    if not objective_for_auth:
+        raise HTTPException(status_code=400, detail="Objective not found for this submission")
+
+    if not _user_can_review_progress_submission(
+        db, reviewer_user, submission, objective_for_auth
+    ):
+        step = current_step(db, SUBJECT_PROGRESS_SUBMISSION, submission_id)
+        if step and step.approval_type == STEP_FUNCTIONAL:
+            assigned = db.query(User).filter(User.id == step.approver_id).first()
+            who = assigned.email if assigned else "the assigned functional approver"
+            raise HTTPException(
+                status_code=403,
+                detail=f"Not authorized: awaiting functional approval from {who}",
+            )
+        raise HTTPException(status_code=403, detail="Not authorized to review this submission")
+
+    step = current_step(db, SUBJECT_PROGRESS_SUBMISSION, submission_id)
+    line_delegate = bool(
+        step
+        and step.approval_type == STEP_LINE
+        and step.approver_id
+        and step.approver_id != user_id
+        and _user_can_validate_progress_submission(
             db, reviewer_user, objective_for_auth, submission.submitted_by_id or ""
-        ):
-            raise HTTPException(status_code=403, detail="Not authorized to review this submission")
+        )
+    )
     
     # Validate action
     action = req.action.lower()
@@ -372,92 +655,71 @@ def review_progress_submission(
             status_code=400,
             detail="manager_value is required when action is 'override'"
         )
-    
-    # Update submission
-    submission.reviewed_by_id = user_id
-    submission.reviewed_at = datetime.utcnow()
+
     submission.manager_note = req.manager_note
-    
-    if action in ("approve", "override"):
-        submission.status = "APPROVED"
-        
-        if action == "override":
-            submission.manager_value = req.manager_value
-            final_value = req.manager_value
-        else:
-            final_value = submission.employee_value
-        
-        # Update KR current value
-        kr = db.query(KeyResult).filter(KeyResult.id == submission.key_result_id).first()
-        if kr:
-            kr.current_value = final_value
-            pct = min((final_value / kr.target_value * 100) if kr.target_value > 0 else 0, 100)
-            kr.status = "COMPLETED" if pct >= 100 else "IN_PROGRESS" if pct > 0 else "NOT_STARTED"
-            
-            # Recalculate objective progress using weighted formula
-            objective = db.query(Objective).filter(Objective.id == kr.objective_id).first()
-            if objective:
-                _recalc_weighted_progress(objective, db)
-                
-                # ── CASCADE: Propagate progress upward through parent chain ──
-                cascade = OKRCascadeService(db)
-                cascade.propagate_progress_upward(objective.id)
-                
-                # ── MULTI-LEVEL APPROVAL: Create parent-level submissions for cascading approval ──
-                reviewer = db.query(User).filter(User.id == user_id).first()
-                if reviewer and objective.parent_id:
-                    # Trigger upward approval cascade
-                    _propagate_approval_upward(objective, db)
-    
-    elif action == "reject":
-        submission.status = "REJECTED"
-    
-    elif action == "revision_requested":
-        submission.status = "REVISION_REQUESTED"
-    
-    # Record the reviewer's role in the validation chain
-    reviewer = db.query(User).filter(User.id == user_id).first()
-    if reviewer:
-        submission.validation_level = reviewer.system_role
-        # Build validation chain
-        existing_chain = []
-        if submission.validation_chain:
-            try:
-                existing_chain = json.loads(submission.validation_chain)
-            except Exception:
-                existing_chain = []
-        existing_chain.append({
-            "role": reviewer.system_role,
-            "user_id": user_id,
-            "action": action,
-            "timestamp": datetime.utcnow().isoformat(),
-        })
-        submission.validation_chain = json.dumps(existing_chain)
-    
+    if action == "override":
+        submission.manager_value = req.manager_value
+
+    manager_value_for_finalize = (
+        req.manager_value if action == "override" else None
+    )
+
+    try:
+        if action in ("approve", "override"):
+            result = approve_current_step_for_subject(
+                db,
+                SUBJECT_PROGRESS_SUBMISSION,
+                submission_id,
+                user_id,
+                req.manager_note or "",
+                manager_value=manager_value_for_finalize,
+                allow_line_delegate=line_delegate,
+            )
+            if not result.get("finalized"):
+                submission.status = "PENDING"
+        elif action in ("reject", "revision_requested"):
+            reason = req.manager_note or "Rejected"
+            reject_current_step_for_subject(
+                db,
+                SUBJECT_PROGRESS_SUBMISSION,
+                submission_id,
+                user_id,
+                reason,
+                allow_line_delegate=line_delegate,
+            )
+            if action == "revision_requested":
+                submission.status = "REVISION_REQUESTED"
+    except DualApprovalError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
     db.commit()
     db.refresh(submission)
-    
-    return _get_submission_dict(submission, db)
+
+    result_payload = _get_submission_dict(submission, db)
+    if submission.status == "APPROVED" and submission.key_result_id:
+        kr_out = db.query(KeyResult).filter(KeyResult.id == submission.key_result_id).first()
+        obj_out = (
+            db.query(Objective).filter(Objective.id == kr_out.objective_id).first()
+            if kr_out
+            else None
+        )
+        if kr_out:
+            result_payload["kr_current_value"] = kr_out.current_value
+            result_payload["kr_progress_pct"] = round(calculate_kr_progress(kr_out), 1)
+        if obj_out:
+            result_payload["objective_progress"] = obj_out.progress
+    return result_payload
 
 
 def _recalc_weighted_progress(objective: Objective, db: Session):
-    """Recalculate objective progress from its key results using weighted average."""
-    krs = db.query(KeyResult).filter(KeyResult.objective_id == objective.id).all()
-    if not krs:
-        return
-    
-    weighted_scores = []
-    for k in krs:
-        pct = calculate_kr_progress(k)
-        weight = k.weight or 1.0
-        weighted_scores.append((pct, weight))
-    
-    total_weight = sum(w for _, w in weighted_scores)
-    if total_weight > 0:
-        weighted_progress = sum(s * w for s, w in weighted_scores) / total_weight
-        objective.progress = round(weighted_progress, 1)
-    
-    objective.status = "COMPLETED" if (objective.progress or 0) >= 100 else "ACTIVE"
+    """
+    Recalculate objective progress.
+
+    Phase 4.4 / 4.3: when this row has rollup children (``parent_id`` or
+    ``functional_parent_obj_id`` edges into this id), use the same aggregation as
+    ``OKRCascadeService``; otherwise from key results only.
+    """
+    OKRCascadeService(db).refresh_objective_progress_for_session(objective.id)
     db.flush()
 
 
@@ -473,19 +735,30 @@ def _get_next_approver_in_chain(objective_level: str, approver_role: str) -> tup
         "INDIVIDUAL": {
             "MANAGER": ("DEPT_HEAD", "DEPARTMENT_HEAD"),
             "DEPT_HEAD": ("PLANT_HEAD", "PLANT_HEAD"),
-            "PLANT_HEAD": ("CEO", "CEO"),
+            "PLANT_HEAD": ("VP_OPERATIONS", "VP_OPERATIONS"),
         },
         "TEAM": {
             "MANAGER": ("DEPT_HEAD", "DEPARTMENT_HEAD"),
             "DEPT_HEAD": ("PLANT_HEAD", "PLANT_HEAD"),
-            "PLANT_HEAD": ("CEO", "CEO"),
+            "PLANT_HEAD": ("VP_OPERATIONS", "VP_OPERATIONS"),
         },
         "DEPARTMENT": {
             "DEPT_HEAD": ("PLANT_HEAD", "PLANT_HEAD"),
-            "PLANT_HEAD": ("CEO", "CEO"),
+            "PLANT_HEAD": ("VP_OPERATIONS", "VP_OPERATIONS"),
         },
         "PLANT": {
-            "PLANT_HEAD": ("CEO", "CEO"),
+            "PLANT_HEAD": ("VP_OPERATIONS", "VP_OPERATIONS"),
+            "VP_OPERATIONS": ("CEO", "CEO"),
+            "VP_MANUFACTURING": ("CEO", "CEO"),
+            "REGIONAL_HEAD": ("CEO", "CEO"),
+        },
+        "REGION": {
+            "VP_OPERATIONS": ("CEO", "CEO"),
+            "VP_MANUFACTURING": ("CEO", "CEO"),
+            "REGIONAL_HEAD": ("CEO", "CEO"),
+        },
+        "ORGANIZATION": {
+            "CEO": ("CEO", "CEO"),
         },
     }
     
@@ -527,91 +800,134 @@ def _auto_create_parent_submission(
     """
     After child objective is approved, auto-create a submission for parent objective
     using the calculated progress from cascading children.
-    
-    This submission will need approval from the next level.
+
+    Uses the parent's first key result as anchor (SQLite requires key_result_id NOT NULL).
     """
+    if not approver_role:
+        return None
+
+    parent_kr = (
+        db.query(KeyResult)
+        .filter(KeyResult.objective_id == parent_objective.id)
+        .order_by(KeyResult.created_at)
+        .first()
+    )
+    if not parent_kr:
+        return None
+
+    nested = db.begin_nested()
     try:
-        # Recalculate parent progress from all children
         _recalc_weighted_progress(parent_objective, db)
-        
-        # Create auto-submission at parent level
-        # The value is the parent's newly calculated progress
-        parent_progress = parent_objective.progress or 0.0
-        
+
+        parent_progress = float(parent_objective.progress or 0.0)
+        if parent_kr.target_value and parent_kr.target_value > 0:
+            employee_value = (parent_progress / 100.0) * parent_kr.target_value
+        else:
+            employee_value = parent_progress
+
         submission = ProgressSubmission(
             id=str(uuid.uuid4()),
-            key_result_id=None,  # Parent-level submissions don't tie to specific KR
-            objective_id=parent_objective.id,  # Track which objective this is for
-            submitted_by_id="system",  # Auto-created by system
-            employee_value=parent_progress,
+            key_result_id=parent_kr.id,
+            objective_id=parent_objective.id,
+            submitted_by_id="system",
+            employee_value=employee_value,
             employee_note=f"Auto-cascaded from child: {child_objective.title}",
             status="PENDING",
             validation_level=approver_role,
             next_approver_role=approver_role,
             created_at=datetime.utcnow(),
         )
-        
+
         db.add(submission)
         db.flush()
-        
+        nested.commit()
         return submission
     except Exception as e:
-        # Log but don't fail the parent approval
-        print(f"Error creating parent submission: {e}")
+        nested.rollback()
+        logger.warning("Error creating parent submission: %s", e)
         return None
 
 
-def _propagate_approval_upward(objective: Objective, db: Session) -> Dict[str, Any]:
+def _propagate_approval_upward(
+    objective: Objective,
+    db: Session,
+    reviewer_role: str,
+) -> Dict[str, Any]:
     """
     After an objective is approved, cascade approval upward through parent chain.
-    
-    Process:
-    1. If objective has a parent, calculate parent's new progress
-    2. Create auto-submission for parent at next approval level
-    3. Continue up the chain until we reach the top
-    
-    Returns summary of cascade chain.
+
+    Phase 4.4: also walks the dotted-line ``functional_parent_obj_id`` branch (when not
+    already visited on the solid chain), mirroring ``OKRCascadeService.propagate_progress_upward``.
     """
     cascade_chain = []
-    current_obj = objective
     visited = {objective.id}
-    
-    while current_obj.parent_id and current_obj.parent_id not in visited:
-        parent = db.query(Objective).filter(Objective.id == current_obj.parent_id).first()
-        if not parent:
-            break
-        
-        visited.add(parent.id)
-        
-        # Determine next approver
-        next_role, next_level = _get_next_approver_in_chain(
-            parent.level, 
-            current_obj.level
+
+    def step_solid_chain(current_obj: Objective) -> None:
+        while current_obj.parent_id and current_obj.parent_id not in visited:
+            parent = (
+                db.query(Objective)
+                .filter(Objective.id == current_obj.parent_id)
+                .first()
+            )
+            if not parent:
+                break
+            visited.add(parent.id)
+            next_role = _primary_approver_role_for_level(parent.level)
+            _recalc_weighted_progress(parent, db)
+            # Skip queue item when the same role already approved (e.g. CEO approves region → org rollup).
+            if next_role and next_role != reviewer_role:
+                parent_submission = _auto_create_parent_submission(
+                    current_obj,
+                    parent,
+                    next_role,
+                    db,
+                )
+                if parent_submission:
+                    cascade_chain.append({
+                        "objective_id": parent.id,
+                        "objective_title": parent.title,
+                        "objective_level": parent.level,
+                        "progress": parent.progress,
+                        "submission_id": parent_submission.id,
+                        "next_approver_role": next_role,
+                    })
+            current_obj = parent
+
+    step_solid_chain(objective)
+
+    obj_r = db.query(Objective).filter(Objective.id == objective.id).first()
+    if (
+        obj_r
+        and obj_r.functional_parent_obj_id
+        and obj_r.functional_parent_obj_id not in visited
+    ):
+        fp = (
+            db.query(Objective)
+            .filter(Objective.id == obj_r.functional_parent_obj_id)
+            .first()
         )
-        
-        # Recalculate parent progress
-        _recalc_weighted_progress(parent, db)
-        
-        # Create auto-submission
-        parent_submission = _auto_create_parent_submission(
-            current_obj,
-            parent,
-            next_role,
-            db
-        )
-        
-        if parent_submission:
-            cascade_chain.append({
-                "objective_id": parent.id,
-                "objective_title": parent.title,
-                "objective_level": parent.level,
-                "progress": parent.progress,
-                "submission_id": parent_submission.id,
-                "next_approver_role": next_role,
-            })
-        
-        current_obj = parent
-    
+        if fp:
+            visited.add(fp.id)
+            next_role = _primary_approver_role_for_level(fp.level)
+            _recalc_weighted_progress(fp, db)
+            if next_role and next_role != reviewer_role:
+                parent_submission = _auto_create_parent_submission(
+                    obj_r,
+                    fp,
+                    next_role,
+                    db,
+                )
+                if parent_submission:
+                    cascade_chain.append({
+                        "objective_id": fp.id,
+                        "objective_title": fp.title,
+                        "objective_level": fp.level,
+                        "progress": fp.progress,
+                        "submission_id": parent_submission.id,
+                        "next_approver_role": next_role,
+                    })
+            step_solid_chain(fp)
+
     return {
         "success": True,
         "chain_length": len(cascade_chain),
@@ -660,13 +976,23 @@ def submit_progress_legacy(
     objective = db.query(Objective).filter(Objective.id == kr.objective_id).first()
     if not objective:
         raise HTTPException(status_code=404, detail="Objective not found")
+        
+    # Check if cycle is frozen
+    if objective.cycle_id:
+        from server.models import Cycle
+        cycle = db.query(Cycle).filter(Cycle.id == objective.cycle_id).first()
+        if cycle and cycle.status in ("FROZEN", "CLOSED"):
+            raise HTTPException(
+                status_code=409, 
+                detail=f"Cannot submit progress: The cycle '{cycle.name}' is currently {cycle.status}."
+            )
     
     user = db.query(User).filter(User.id == user_id).first()
-    is_owner = objective.owner_id == user_id
-    is_manager = user and user.system_role in ["CEO", "MANAGER", "DEPT_HEAD", "PLANT_HEAD"]
-    
-    if not (is_owner or is_manager):
-        raise HTTPException(status_code=403, detail="Not authorized")
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    can_submit, submit_reason = can_submit_okr_progress(user, objective, db)
+    if not can_submit:
+        raise HTTPException(status_code=403, detail=submit_reason)
     
     previous_value = kr.current_value
     
@@ -704,76 +1030,83 @@ def get_pending_validations(
     user_id: str = "",
     team_id: Optional[str] = None,
     department_id: Optional[str] = None,
+    cycle_id: Optional[str] = None,
 ):
     """
-    Legacy pending progress updates. Same visibility rules as /submissions/pending.
+    Pending KR progress awaiting this user's approval.
+    Includes both legacy ProgressUpdate rows and ProgressSubmission rows.
     """
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    q = (
+    def _scope_objective_query(base_q):
+        scoped = apply_okr_visibility_filter(base_q, user, db, org_id)
+        okr_scope = get_user_okr_scope(user, db)
+        scoped = apply_optional_scope_narrowing(
+            scoped,
+            okr_scope,
+            plant_id=None,
+            department_id=department_id,
+            team_id=team_id,
+            db=db,
+            org_id=org_id,
+        )
+        if team_id:
+            scoped = scoped.filter(Objective.team_id == team_id)
+        if department_id:
+            scoped = scoped.filter(Objective.department_id == department_id)
+        if cycle_id:
+            scoped = scoped.filter(Objective.cycle_id == cycle_id)
+        return scoped
+
+    result: list[dict] = []
+    seen_ids: set[str] = set()
+
+    # ── New workflow: ProgressSubmission ──
+    sub_q = (
+        db.query(ProgressSubmission)
+        .filter(
+            ProgressSubmission.status == "PENDING",
+            ProgressSubmission.key_result_id.isnot(None),
+        )
+        .join(KeyResult, KeyResult.id == ProgressSubmission.key_result_id)
+        .join(Objective, Objective.id == KeyResult.objective_id)
+        .filter(Objective.org_id == org_id)
+    )
+    sub_q = _scope_objective_query(sub_q)
+    for submission in sub_q.order_by(ProgressSubmission.created_at.desc()).all():
+        kr = db.query(KeyResult).filter(KeyResult.id == submission.key_result_id).first()
+        obj = db.query(Objective).filter(Objective.id == kr.objective_id).first() if kr else None
+        if not obj:
+            continue
+        if not _user_can_review_progress_submission(db, user, submission, obj):
+            continue
+        item = _pending_item_from_submission(submission, db)
+        if item and item["id"] not in seen_ids:
+            seen_ids.add(item["id"])
+            result.append(item)
+
+    # ── Legacy: ProgressUpdate ──
+    upd_q = (
         db.query(ProgressUpdate)
         .filter(ProgressUpdate.status == "PENDING")
         .join(KeyResult, KeyResult.id == ProgressUpdate.key_result_id)
         .join(Objective, Objective.id == KeyResult.objective_id)
         .filter(Objective.org_id == org_id)
     )
-
-    if team_id:
-        q = q.filter(Objective.team_id == team_id)
-    elif department_id:
-        q = q.filter(Objective.department_id == department_id)
-    else:
-        if user.system_role in ("CEO", "VP_OPERATIONS"):
-            pass
-        else:
-            scope_parts = []
-            if user.system_role == "PLANT_HEAD" and user.plant_id:
-                scope_parts.append(Objective.plant_id == user.plant_id)
-            if user.system_role == "DEPT_HEAD" and user.department_id:
-                scope_parts.append(Objective.department_id == user.department_id)
-            team_scope = set(_team_scope_ids_for_validator(db, user))
-            if user.system_role == "MANAGER" and user.team_id:
-                team_scope.add(user.team_id)
-            if user.system_role in ("TEAM_LEAD", "SUPERVISOR") and user.team_id:
-                team_scope.add(user.team_id)
-            if team_scope:
-                scope_parts.append(Objective.team_id.in_(list(team_scope)))
-            if scope_parts:
-                q = q.filter(or_(*scope_parts))
-            else:
-                return []
-
-    updates = q.order_by(ProgressUpdate.created_at.desc()).all()
-
-    result = []
-    for update in updates:
+    upd_q = _scope_objective_query(upd_q)
+    for update in upd_q.order_by(ProgressUpdate.created_at.desc()).all():
         kr = db.query(KeyResult).filter(KeyResult.id == update.key_result_id).first()
         obj = db.query(Objective).filter(Objective.id == kr.objective_id).first() if kr else None
-        if not obj or not _user_can_validate_progress_submission(
-            db, user, obj, update.submitted_by_id
-        ):
+        if not obj or not _user_can_validate_progress_submission(db, user, obj, update.submitted_by_id):
             continue
-        submitter = db.query(User).filter(User.id == update.submitted_by_id).first()
+        item = _pending_item_from_update(update, db)
+        if item and item["id"] not in seen_ids:
+            seen_ids.add(item["id"])
+            result.append(item)
 
-        result.append({
-            "id": update.id,
-            "key_result_id": update.key_result_id,
-            "key_result_title": kr.title if kr else None,
-            "objective_id": obj.id if obj else None,
-            "objective_title": obj.title if obj else None,
-            "objective_level": obj.level if obj else None,
-            "submitted_by": submitter.name if submitter else None,
-            "submitted_by_id": update.submitted_by_id,
-            "previous_value": update.previous_value,
-            "new_value": update.new_value,
-            "notes": update.notes,
-            "blockers": update.blockers,
-            "status": update.status,
-            "created_at": update.created_at.isoformat(),
-        })
-
+    result.sort(key=lambda x: x.get("created_at") or "", reverse=True)
     return result
 
 
@@ -817,21 +1150,13 @@ def validate_progress_update(
         kr = db.query(KeyResult).filter(KeyResult.id == update.key_result_id).first()
         if kr:
             kr.current_value = update.new_value
-            
+            pct = min((update.new_value / kr.target_value * 100) if kr.target_value > 0 else 0, 100)
+            kr.status = "COMPLETED" if pct >= 100 else "IN_PROGRESS" if pct > 0 else "NOT_STARTED"
+
             objective = db.query(Objective).filter(Objective.id == kr.objective_id).first()
             if objective:
-                krs = db.query(KeyResult).filter(KeyResult.objective_id == objective.id).all()
-                if krs:
-                    weighted_scores = []
-                    for k in krs:
-                        pct = calculate_kr_progress(k)
-                        weight = k.weight or 1.0
-                        weighted_scores.append((pct, weight))
-                    
-                    total_weight = sum(w for _, w in weighted_scores)
-                    if total_weight > 0:
-                        weighted_progress = sum(s * w for s, w in weighted_scores) / total_weight
-                        objective.progress = round(weighted_progress, 1)
+                _recalc_weighted_progress(objective, db)
+                OKRCascadeService(db).propagate_progress_upward(objective.id)
     
     db.commit()
     db.refresh(update)
@@ -1083,14 +1408,19 @@ def get_approvals_dashboard(
         
         by_level[level]["count"] += 1
     
-    # Get user's specific queue
-    user_queue = []
-    if user.system_role in ["MANAGER", "DEPT_HEAD", "PLANT_HEAD", "CEO"]:
-        user_submissions = db.query(ProgressSubmission).filter(
-            ProgressSubmission.status == "PENDING",
-            ProgressSubmission.next_approver_role == user.system_role,
-        ).all()
-        user_queue = [_get_submission_dict(s, db) for s in user_submissions]
+    # Get user's specific queue (dual-approval assignee, any role)
+    user_queue_ids = pending_subject_ids_for_approver(
+        db, org_id, user_id, SUBJECT_PROGRESS_SUBMISSION
+    )
+    user_submissions = (
+        db.query(ProgressSubmission)
+        .filter(ProgressSubmission.id.in_(user_queue_ids))
+        .order_by(ProgressSubmission.created_at.desc())
+        .all()
+        if user_queue_ids
+        else []
+    )
+    user_queue = [_get_submission_dict(s, db) for s in user_submissions]
     
     return {
         "user_role": user.system_role,

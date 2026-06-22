@@ -195,9 +195,13 @@ def _serialize_rule(r: RolePermissionRule) -> dict:
 def _default_scope(role: str) -> str:
     return {
         "SUPER_ADMIN": "ORGANIZATION", "CEO": "ORGANIZATION",
-        "VP_OPERATIONS": "ORGANIZATION", "HR_HEAD": "ORGANIZATION",
+        "VP_OPERATIONS": "ORGANIZATION", "HR_HEAD": "ORGANIZATION", "CHRO": "ORGANIZATION",
+        "CFO": "ORGANIZATION", "CMO": "ORGANIZATION", "CPO": "ORGANIZATION", "CSO": "ORGANIZATION",
+        "CTO": "ORGANIZATION", "COO": "ORGANIZATION", "CRO": "ORGANIZATION",
+        "FUNCTIONAL_SUB_HEAD": "ORGANIZATION",
         "HR_ADMIN": "ORGANIZATION", "PLANT_HEAD": "PLANT",
         "PLANT_MANAGER": "PLANT", "DEPT_HEAD": "DEPARTMENT",
+        "AREA_SALES_MANAGER": "DEPARTMENT",
         "MANAGER": "TEAM", "TEAM_LEAD": "TEAM",
         "SUPERVISOR": "DIRECT_REPORTS", "EMPLOYEE": "SELF",
     }.get(role, "SELF")
@@ -221,8 +225,13 @@ def _default_flags(role: str, perm: dict) -> dict:
             f["can_approve"] = "approve" in actions
         return f
 
-    if role in ("HR_HEAD", "HR_ADMIN"):
+    if role in ("HR_HEAD", "HR_ADMIN", "CHRO", "CFO", "CMO", "CPO", "CSO", "CTO", "FUNCTIONAL_SUB_HEAD"):
         f["can_view"] = "view" in actions
+        if cat in ("EMPLOYEE", "REVIEW", "OKR", "PROGRESS", "ALIGNMENT", "APPROVAL"):
+            if "view" in actions:
+                f["can_view"] = True
+            if cat in ("APPROVAL", "OKR", "PROGRESS") and "approve" in actions:
+                f["can_approve"] = True
         if cat in ("EMPLOYEE", "REVIEW"):
             for a in actions:
                 f[f"can_{a}"] = True

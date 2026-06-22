@@ -76,11 +76,9 @@ function DashboardPage() {
           <p className="text-xs uppercase tracking-wider text-muted-foreground">
             Welcome back, {user.name.split(" ")[0]}
           </p>
-          <h2 className="mt-1 text-2xl font-semibold tracking-tight">
-            Your {user.system_role.toLowerCase().replace("_", " ")} cockpit
-          </h2>
+          <h2 className="mt-1 text-2xl font-semibold tracking-tight">Dashboard</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            {user.designation || "Manufacturing Operations"}
+            {user.system_role === "EMPLOYEE" ? "Your OKR progress and reviews" : "OKR alignment and progress"}
           </p>
         </div>
         <div className="flex gap-2">

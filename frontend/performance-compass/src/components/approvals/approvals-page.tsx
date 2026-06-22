@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { Route } from "@/routes/approvals";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,7 +13,15 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { CascadeVisualizer } from "./cascade-visualizer";
+import { DualApprovalChainBadge } from "./dual-approval-chain-badge";
+import { OkrCreationApprovalQueue } from "@/components/okr/okr-creation-approval-queue";
+import { useAuthStore } from "@/lib/stores/auth-store";
 import type { ProgressSubmission, ProgressStatus } from "@/lib/api";
+
+const FUNCTIONAL_HEAD_ROLES = new Set([
+  "CFO", "CMO", "CHRO", "HR_HEAD", "CPO", "CSO", "CTO", "COO",
+]);
+const LINE_APPROVER_ROLES = new Set(["PLANT_HEAD", "DEPT_HEAD", "MANAGER"]);
 
 const STATUS_CONFIG: Record<ProgressStatus, { color: string; icon: React.ElementType; label: string }> = {
   PENDING: {
@@ -53,6 +62,21 @@ interface SubmissionRow {
 }
 
 export function ApprovalsPage() {
+  const { type: queueType, stage: stageFilter } = Route.useSearch();
+  const { user } = useAuthStore();
+  const activeTab: "okr_creation" | "progress" =
+    queueType === "okr_creation" ? "okr_creation" : "progress";
+
+  const defaultStage =
+    user?.system_role && FUNCTIONAL_HEAD_ROLES.has(user.system_role)
+      ? "functional"
+      : user?.system_role && LINE_APPROVER_ROLES.has(user.system_role)
+        ? "line"
+        : undefined;
+  const activeStage = stageFilter ?? defaultStage;
+
+  const stageQuerySuffix = activeStage ? `&stage=${activeStage}` : "";
+
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedSubmission, setSelectedSubmission] = useState<ProgressSubmission | null>(null);
@@ -63,8 +87,13 @@ export function ApprovalsPage() {
 
   // Fetch pending submissions and dashboard
   const { data: submissions, isLoading: submissionsLoading } = useQuery({
-    queryKey: ["pending-submissions"],
-    queryFn: () => api.getPendingSubmissions(),
+    queryKey: ["pending-submissions", activeStage],
+    queryFn: () =>
+      api.getPendingSubmissions(
+        activeStage === "line" || activeStage === "functional"
+          ? { stage: activeStage }
+          : undefined,
+      ),
     refetchInterval: 30000,
   });
 
@@ -127,6 +156,18 @@ export function ApprovalsPage() {
   }) || [];
 
   if (submissionsLoading || dashboardLoading) {
+    if (activeTab === "okr_creation") {
+      return (
+        <div className="min-h-screen bg-slate-950 p-6">
+          <div className="max-w-7xl mx-auto">
+            <div className="mb-8">
+              <h1 className="text-3xl font-bold text-white mb-2">Approval Queue</h1>
+            </div>
+            <OkrCreationApprovalQueue />
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="text-center">
@@ -143,9 +184,58 @@ export function ApprovalsPage() {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-white mb-2">Approval Queue</h1>
-          <p className="text-gray-400">Review and approve pending OKR progress submissions</p>
+          <p className="text-gray-400">Review OKR creation requests and KR progress submissions</p>
+          <div className="flex flex-wrap gap-2 mt-4">
+            <a
+              href={`/approvals?type=okr_creation${stageQuerySuffix}`}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                activeTab === "okr_creation"
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-slate-800 text-gray-300 hover:bg-slate-700"
+              }`}
+            >
+              OKR Creation Approvals
+            </a>
+            <a
+              href={`/approvals?type=progress${stageQuerySuffix}`}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                activeTab === "progress"
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-slate-800 text-gray-300 hover:bg-slate-700"
+              }`}
+            >
+              Progress Validation
+            </a>
+            <span className="w-px bg-slate-700 mx-1 hidden sm:block" />
+            <a
+              href={`/approvals?type=${activeTab}&stage=line`}
+              className={`px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                activeStage === "line"
+                  ? "bg-amber-600/20 text-amber-300 border border-amber-500/40"
+                  : "bg-slate-800 text-gray-400 hover:bg-slate-700"
+              }`}
+            >
+              Line approvals
+            </a>
+            <a
+              href={`/approvals?type=${activeTab}&stage=functional`}
+              className={`px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                activeStage === "functional"
+                  ? "bg-violet-600/20 text-violet-300 border border-violet-500/40"
+                  : "bg-slate-800 text-gray-400 hover:bg-slate-700"
+              }`}
+            >
+              Functional approvals
+            </a>
+          </div>
         </div>
 
+        {activeTab === "okr_creation" ? (
+          <div className="mb-8">
+            <OkrCreationApprovalQueue />
+          </div>
+        ) : (
+          <>
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
           <Card className="bg-slate-900 border-slate-700">
@@ -228,7 +318,7 @@ export function ApprovalsPage() {
                           <p className="text-sm text-gray-400">
                             {submission.employee_note || "No notes"}
                           </p>
-                          <div className="flex items-center gap-2 mt-2">
+                          <div className="flex items-center gap-2 mt-2 flex-wrap">
                             <span className="text-xs text-gray-500">
                               Value: {submission.employee_value}
                             </span>
@@ -237,6 +327,10 @@ export function ApprovalsPage() {
                                 → {submission.manager_value}
                               </span>
                             )}
+                            <DualApprovalChainBadge
+                              chain={submission.approval_chain_status}
+                              compact
+                            />
                           </div>
                         </div>
                       </div>
@@ -263,6 +357,8 @@ export function ApprovalsPage() {
             )}
           </CardContent>
         </Card>
+          </>
+        )}
       </div>
 
       {/* Review Dialog */}

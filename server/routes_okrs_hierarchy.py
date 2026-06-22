@@ -6,7 +6,7 @@ Implements REST API endpoints for strict hierarchy-based OKR creation, assignmen
 validation, and approval workflow.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Optional, List, Dict, Any
 from datetime import datetime
@@ -19,6 +19,17 @@ from server.models import (
 from server.okr_hierarchy_workflow import OKRHierarchyWorkflow
 from server.roles import allowed_objective_levels_for, normalize_role
 from server.schemas import ObjectiveCreate, KeyResultCreate, ProgressUpdateCreate
+from server.services.objective_functional_validation import (
+    reject_functional_parent_obj_id_in_create_body,
+)
+from server.services.okr_lifecycle_service import activate_okr, reject_okr, enqueue_okr_creation_approval
+from server.services.dual_approval_service import (
+    SUBJECT_OKR_CREATION,
+    DualApprovalError,
+    approve_current_step_for_subject,
+    reject_current_step_for_subject,
+    chain_status,
+)
 
 router = APIRouter(prefix="/api/okrs/hierarchy", tags=["okrs-hierarchy"])
 
@@ -88,6 +99,7 @@ def validate_hierarchy_chain(
         plant_id,
         department_id,
         team_id,
+        region_id=None,
     )
 
     return {
@@ -132,14 +144,14 @@ def validate_can_assign(
 @router.post("/validate/can-approve")
 def validate_can_approve(
     db: Session = Depends(get_db),
-    approver_id: str = "",
+    user_id: str = "",
     okr_id: str = "",
     org_id: str = "",
 ):
     """
     Check if user can approve an OKR for creation.
     """
-    approver = db.query(User).filter(User.id == approver_id).first()
+    approver = db.query(User).filter(User.id == user_id).first()
     if not approver:
         raise HTTPException(404, "Approver user not found")
 
@@ -167,14 +179,14 @@ def validate_can_approve(
 
 @router.post("/create")
 def create_okr_hierarchical(
-    req: ObjectiveCreate,
+    body: dict = Body(...),
     db: Session = Depends(get_db),
     org_id: str = "",
     user_id: str = "",
 ):
     """
     Create an OKR with hierarchy-based validation and workflow.
-    
+
     Request body:
     {
         "title": "Increase Production Efficiency",
@@ -188,6 +200,8 @@ def create_okr_hierarchical(
         "cycle_id": "cycle123"
     }
     """
+    reject_functional_parent_obj_id_in_create_body(body)
+    req = ObjectiveCreate.model_validate(body)
     creator = db.query(User).filter(User.id == user_id).first()
     if not creator:
         raise HTTPException(404, "Creator user not found")
@@ -218,6 +232,7 @@ def create_okr_hierarchical(
         req.plant_id,
         req.department_id,
         req.team_id,
+        getattr(req, "region_id", None),
     )
     if not valid:
         raise HTTPException(400, reason)
@@ -245,20 +260,33 @@ def create_okr_hierarchical(
         title=req.title,
         description=req.description,
         level=req.level.upper(),
+        region_id=getattr(req, "region_id", None),
         plant_id=req.plant_id,
         department_id=req.department_id,
         team_id=req.team_id,
         # New workflow fields
         creation_approval_status="PENDING",
+        okr_status="DRAFT",
         visibility_scope="STANDARD",
         allows_cascade=True,
     )
     db.add(obj)
+    db.flush()
+    try:
+        enqueue_okr_creation_approval(db, obj, org_id, creator)
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(400, str(e))
     db.commit()
     db.refresh(obj)
 
     # Get approval chain for this OKR
     approval_chain = workflow.get_approval_chain_for_okr(obj, org_id)
+
+    pending_name = ""
+    if obj.pending_approver_user_id:
+        pa = db.query(User).filter(User.id == obj.pending_approver_user_id).first()
+        pending_name = pa.name if pa else ""
 
     return {
         "id": obj.id,
@@ -266,9 +294,14 @@ def create_okr_hierarchical(
         "level": obj.level,
         "owner_id": obj.owner_id,
         "status": obj.status,
+        "okr_status": obj.okr_status,
         "creation_approval_status": obj.creation_approval_status,
+        "pending_approver_user_id": obj.pending_approver_user_id,
+        "pending_approver_name": pending_name,
         "approval_chain": approval_chain,
-        "message": f"OKR created successfully. Pending approval from: {', '.join([a['role'] for a in approval_chain[:1]])}"
+        "message": (
+            f"OKR created successfully. Pending approval from: {pending_name or 'approver'}"
+        ),
     }
 
 
@@ -281,39 +314,56 @@ def approve_okr_creation(
     okr_id: str,
     approval_notes: str = "",
     db: Session = Depends(get_db),
-    approver_id: str = "",
+    user_id: str = "",
     org_id: str = "",
 ):
     """
-    Approve an OKR for creation by someone in the approval chain.
+    Approve the current step in the dual-approval chain (line then functional).
+    OKR becomes ACTIVE only after all required steps approve.
     """
     okr = db.query(Objective).filter(Objective.id == okr_id).first()
     if not okr:
         raise HTTPException(404, "Objective not found")
 
-    approver = db.query(User).filter(User.id == approver_id).first()
+    if (okr.okr_status or "").upper() not in ("PENDING_APPROVAL",):
+        raise HTTPException(
+            400,
+            f"OKR is not awaiting creation approval (status: {okr.okr_status})",
+        )
+
+    approver = db.query(User).filter(User.id == user_id).first()
     if not approver:
         raise HTTPException(404, "Approver user not found")
 
-    workflow = OKRHierarchyWorkflow(db)
-    can_approve, reason = workflow.can_approve_okr(approver, okr, org_id)
-    if not can_approve:
-        raise HTTPException(403, reason)
+    try:
+        result = approve_current_step_for_subject(
+            db,
+            SUBJECT_OKR_CREATION,
+            okr_id,
+            user_id,
+            approval_notes,
+        )
+    except DualApprovalError as exc:
+        raise HTTPException(403, str(exc)) from exc
 
-    # Update OKR approval status
-    okr.creation_approval_status = "APPROVED"
-    okr.creation_approved_by_id = approver_id
-    okr.creation_approved_at = datetime.utcnow()
-    okr.creation_approval_notes = approval_notes
+    if result.get("finalized"):
+        okr.creation_approval_notes = approval_notes
+
     db.commit()
+    db.refresh(okr)
 
     return {
         "id": okr.id,
         "title": okr.title,
         "creation_approval_status": okr.creation_approval_status,
+        "okr_status": okr.okr_status,
         "approved_by": approver.name,
-        "approved_at": okr.creation_approved_at.isoformat(),
-        "message": "OKR approval completed successfully"
+        "approved_at": (
+            okr.creation_approved_at.isoformat() if okr.creation_approved_at else None
+        ),
+        "approval_chain_status": chain_status(db, SUBJECT_OKR_CREATION, okr_id),
+        "finalized": result.get("finalized", False),
+        "message": result.get("message", "Approval recorded"),
     }
 
 
@@ -322,31 +372,32 @@ def reject_okr_creation(
     okr_id: str,
     rejection_reason: str,
     db: Session = Depends(get_db),
-    rejector_id: str = "",
+    user_id: str = "",
     org_id: str = "",
 ):
-    """
-    Reject an OKR creation and request revisions.
-    """
+    """Reject the current step in the dual-approval chain."""
     okr = db.query(Objective).filter(Objective.id == okr_id).first()
     if not okr:
         raise HTTPException(404, "Objective not found")
 
-    rejector = db.query(User).filter(User.id == rejector_id).first()
+    rejector = db.query(User).filter(User.id == user_id).first()
     if not rejector:
         raise HTTPException(404, "Rejector user not found")
-
-    workflow = OKRHierarchyWorkflow(db)
-    can_approve, reason = workflow.can_approve_okr(rejector, okr, org_id)
-    if not can_approve:
-        raise HTTPException(403, reason)
 
     if not rejection_reason:
         raise HTTPException(400, "Rejection reason is required")
 
-    # Update OKR status
-    okr.creation_approval_status = "REVISION_REQUESTED"
-    okr.creation_approval_notes = rejection_reason
+    try:
+        result = reject_current_step_for_subject(
+            db,
+            SUBJECT_OKR_CREATION,
+            okr_id,
+            user_id,
+            rejection_reason,
+        )
+    except DualApprovalError as exc:
+        raise HTTPException(403, str(exc)) from exc
+
     db.commit()
 
     return {
@@ -354,7 +405,8 @@ def reject_okr_creation(
         "title": okr.title,
         "creation_approval_status": okr.creation_approval_status,
         "rejection_reason": rejection_reason,
-        "message": "OKR creation rejected. Owner has been notified to revise."
+        "approval_chain_status": chain_status(db, SUBJECT_OKR_CREATION, okr_id),
+        "message": result.get("message", "OKR creation rejected. Owner has been notified to revise."),
     }
 
 

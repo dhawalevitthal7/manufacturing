@@ -10,7 +10,14 @@ interface CascadeVisualizerProps {
   objectiveId?: string;
 }
 
-const LEVEL_ORDER: ObjectiveLevel[] = ["ORGANIZATION", "PLANT", "DEPARTMENT", "TEAM", "INDIVIDUAL"];
+const LEVEL_ORDER: ObjectiveLevel[] = [
+  "ORGANIZATION",
+  "REGION",
+  "PLANT",
+  "DEPARTMENT",
+  "TEAM",
+  "INDIVIDUAL",
+];
 
 const STATUS_ICONS: Record<ProgressStatus, React.ElementType> = {
   PENDING: Clock,

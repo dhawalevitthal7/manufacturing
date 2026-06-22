@@ -25,6 +25,26 @@ AZURE_OPENAI_DEPLOYMENT = os.getenv(
 )
 
 
+def _ai_configured() -> bool:
+    return bool(AZURE_OPENAI_API_KEY and AZURE_OPENAI_API_KEY.strip())
+
+
+def _friendly_ai_error(exc: Exception) -> str:
+    msg = str(exc)
+    if "401" in msg or "invalid subscription key" in msg.lower() or "access denied" in msg.lower():
+        return (
+            "Azure OpenAI is not configured correctly. Set AZURE_OPENAI_API_KEY, "
+            "AZURE_OPENAI_ENDPOINT, and AZURE_OPENAI_DEPLOYMENT_NAME in a .env file "
+            "at the project root, then restart the server."
+        )
+    if not _ai_configured():
+        return (
+            "Azure OpenAI API key is missing. Add AZURE_OPENAI_API_KEY to your .env file "
+            "and restart python main.py."
+        )
+    return "Sorry, I encountered an error. Please try again."
+
+
 class AzureOpenAIService:
     """
     Wrapper around Azure OpenAI for Manufacturing OKR operations
@@ -38,6 +58,12 @@ class AzureOpenAIService:
             raise RuntimeError(
                 "Missing dependency 'openai'. Install it with: pip install openai>=1.51.0"
             ) from exc
+
+        if not _ai_configured():
+            raise RuntimeError(
+                "AZURE_OPENAI_API_KEY is not set. Create a .env file in the project root "
+                "with your Azure OpenAI credentials (see AI_IMPLEMENTATION_SUMMARY.md)."
+            )
 
         self.client = AzureOpenAI(
             api_key=AZURE_OPENAI_API_KEY,
@@ -148,7 +174,12 @@ class AzureOpenAIService:
             return json.loads(content)
         except Exception as e:
             print(f"OKR suggestion error: {e}")
-            return {"error": str(e), "reply": "Sorry, I encountered an error. Please try again."}
+            return {
+                "error": str(e),
+                "reply": _friendly_ai_error(e),
+                "has_suggestion": False,
+                "okr_suggestion": None,
+            }
 
     def cascade_okr_suggestion(
         self,
