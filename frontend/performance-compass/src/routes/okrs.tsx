@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   AlertCircle, Loader2, Plus, Target, Factory, GitBranch, Users, User,
-  Building2, Network, TrendingUp, CheckCircle2, AlertTriangle, XCircle,
+  Building2, Network, TrendingUp, CheckCircle2, AlertTriangle, XCircle, Sparkles,
 } from "lucide-react";
 import {
   useObjectives, usePlants, useAllowedLevels, useVisibilityScope,
@@ -20,6 +20,7 @@ import { CreateOKRDialog } from "@/components/okr/create-okr-dialog";
 import { OKRCard } from "@/components/okr/okr-card";
 import { ValidationQueue } from "@/components/okr/validation-queue";
 import { OkrPendingApprovals } from "@/components/okr/okr-pending-approvals";
+import { AiSuggestedOkrsPanel } from "@/components/okr/ai-suggested-okrs-panel";
 import { canValidateOkrProgress } from "@/utils/okr-permissions";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -118,6 +119,36 @@ function OKRsPage() {
     enabled: canValidateProgress,
     refetchInterval: 30_000,
   });
+
+  const CASCADE_REVIEW_ROLES = new Set([
+    "CEO", "SUPER_ADMIN",
+    "REGIONAL_HEAD", "PLANT_HEAD", "DEPT_HEAD", "TEAM_LEAD",
+    "MANAGER", "SUPERVISOR", "VP_OPERATIONS", "EMPLOYEE",
+  ]);
+
+  const canSeeAiSuggested = CASCADE_REVIEW_ROLES.has(role);
+
+  const { data: aiDrafts = [] } = useQuery({
+    queryKey: ["ai-drafts"],
+    queryFn: () => api.getAiDraftOkrs(),
+    enabled: canSeeAiSuggested,
+    refetchInterval: 30_000,
+  });
+
+  const showAiSuggestedTab = canSeeAiSuggested;
+
+  const { data: parentApprovalQueue = [] } = useQuery({
+    queryKey: ["parent-approval-queue"],
+    queryFn: () => api.getParentApprovalQueue(),
+    refetchInterval: 30_000,
+  });
+
+  const { data: cascadeNotifications = [] } = useQuery({
+    queryKey: ["cascade-notifications"],
+    queryFn: () => api.getCascadeNotifications(true),
+    refetchInterval: 60_000,
+  });
+  const unreadCascadeCount = cascadeNotifications.filter((n) => !n.is_read).length;
   const pendingReviewCount = pendingValidations.length + pendingLifecycleOkrs.length;
 
   // Fetch objectives for current tab — filtered by global year/quarter from top bar
@@ -162,8 +193,22 @@ function OKRsPage() {
         icon: CheckCircle2,
       });
     }
+    if (showAiSuggestedTab) {
+      tabs.push({
+        value: "ai-suggested",
+        label: `AI Suggested (${aiDrafts.length}${unreadCascadeCount ? ` · ${unreadCascadeCount} new` : ""})`,
+        icon: Sparkles,
+      });
+    }
+    if (parentApprovalQueue.length > 0) {
+      tabs.push({
+        value: "parent-ai-approval",
+        label: `Approve AI OKRs (${parentApprovalQueue.length})`,
+        icon: CheckCircle2,
+      });
+    }
     return tabs;
-  }, [role, canValidateProgress, pendingReviewCount, visibleLevelSet]);
+  }, [canValidateProgress, pendingReviewCount, visibleLevelSet, showAiSuggestedTab, aiDrafts.length, parentApprovalQueue.length, unreadCascadeCount]);
 
   const handleCreateOKR = (level?: ObjectiveLevel) => {
     setCreateLevel(level || allowedLevels[0]);
@@ -335,6 +380,32 @@ function OKRsPage() {
             <OkrPendingApprovals />
             <ValidationQueue validations={pendingValidations} />
           </div>
+        </TabsContent>
+
+        <TabsContent value="ai-suggested" className="mt-4">
+          <div className="mb-3">
+            <h3 className="text-base font-semibold flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" />
+              AI Suggested OKRs
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              Review AI-generated OKRs cascaded from your parent objective. Edit, regenerate, or submit for parent approval.
+            </p>
+          </div>
+          <AiSuggestedOkrsPanel mode="child_review" />
+        </TabsContent>
+
+        <TabsContent value="parent-ai-approval" className="mt-4">
+          <div className="mb-3">
+            <h3 className="text-base font-semibold flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-primary" />
+              Parent Approval Queue
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              Child-level OKRs submitted for your approval after AI review.
+            </p>
+          </div>
+          <AiSuggestedOkrsPanel mode="parent_approval" />
         </TabsContent>
 
         {/* OKR list tabs */}

@@ -106,6 +106,30 @@ OBJECTIVE_LEVEL_ORDER: Final[tuple[str, ...]] = (
     "INDIVIDUAL",
 )
 
+# Adjacent hierarchy level for AI cascade (generic engine).
+CASCADE_CHILD_LEVEL: Final[dict[str, str]] = {
+    "ORGANIZATION": "REGION",
+    "VERTICAL": "REGION",
+    "REGION": "PLANT",
+    "PLANT": "DEPARTMENT",
+    "DEPARTMENT": "TEAM",
+    "SUB_DEPARTMENT": "TEAM",
+    "TEAM": "INDIVIDUAL",
+}
+
+# Every parent level with a defined child in CASCADE_CHILD_LEVEL may trigger AI cascade.
+AI_CASCADE_ENABLED_PARENT_LEVELS: Final[frozenset[str]] = frozenset(CASCADE_CHILD_LEVEL.keys())
+
+
+def next_cascade_child_level(parent_level: str) -> str | None:
+    """Return the child objective level for AI cascade, or None if not cascadable."""
+    return CASCADE_CHILD_LEVEL.get((parent_level or "").strip().upper())
+
+
+def is_ai_cascade_enabled(parent_level: str) -> bool:
+    """Whether AI cascade is enabled for this parent objective level."""
+    return (parent_level or "").strip().upper() in AI_CASCADE_ENABLED_PARENT_LEVELS
+
 # Migrated from okr_hierarchy_workflow.ROLE_CREATION_LEVELS (canonical SystemRole keys).
 # SUPER_ADMIN and CEO are handled by executive bypass in can_create_objective_at_level.
 # REGIONAL_HEAD aligns with VP_OPERATIONS. CFO/CMO/CTO: corporate function heads -> DEPARTMENT only.
@@ -241,6 +265,10 @@ __all__ = [
     "FUNCTIONAL_APPROVER_ROLES",
     "LEGACY_ROLE_ALIASES",
     "OBJECTIVE_LEVEL_ORDER",
+    "CASCADE_CHILD_LEVEL",
+    "AI_CASCADE_ENABLED_PARENT_LEVELS",
+    "next_cascade_child_level",
+    "is_ai_cascade_enabled",
     "ROLE_TO_ALLOWED_OBJECTIVE_LEVELS",
     "ROLE_TO_BUSINESS_LEVEL",
     "allowed_objective_levels_for",

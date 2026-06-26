@@ -31,6 +31,7 @@ from server.routes_permission_matrix import router as perm_matrix_router
 from server.routes_cycles import router as cycles_router
 from server.routes_integrations import router as integrations_router
 from server.routes_approvals import router as approvals_router
+from server.routes_okrs_ai_cascade import router as okrs_ai_cascade_router
 import os
 
 Base.metadata.create_all(bind=engine)
@@ -88,6 +89,7 @@ app.include_router(auth_router)
 app.include_router(org_router)
 app.include_router(org_tree_router)
 app.include_router(emp_router)
+app.include_router(okrs_ai_cascade_router)
 app.include_router(okr_router)
 app.include_router(okr_hierarchy_router)
 app.include_router(okrs_ai_router)

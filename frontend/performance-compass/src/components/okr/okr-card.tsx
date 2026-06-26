@@ -26,11 +26,16 @@ const OKR_STATUS_BADGE: Record<string, string> = {
   PENDING_APPROVAL: "text-amber-400 bg-amber-500/10 border-amber-500/30",
   ACTIVE: "text-emerald-400 bg-emerald-500/10 border-emerald-500/30",
   REJECTED: "text-rose-400 bg-rose-500/10 border-rose-500/30",
+  AI_DRAFT: "text-purple-400 bg-purple-500/10 border-purple-500/30",
+  UNDER_REVIEW: "text-sky-400 bg-sky-500/10 border-sky-500/30",
+  PENDING_PARENT_APPROVAL: "text-amber-400 bg-amber-500/10 border-amber-500/30",
+  AI_REJECTED: "text-rose-400 bg-rose-500/10 border-rose-500/30",
 };
 
 // ── Level colors ──
 const LEVEL_COLORS: Record<string, string> = {
   ORGANIZATION: "bg-violet-500/15 text-violet-400 border-violet-500/30",
+  REGION: "bg-cyan-500/15 text-cyan-400 border-cyan-500/30",
   PLANT: "bg-amber-500/15 text-amber-400 border-amber-500/30",
   DEPARTMENT: "bg-blue-500/15 text-blue-400 border-blue-500/30",
   TEAM: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",

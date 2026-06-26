@@ -393,7 +393,81 @@ export type OkrLifecycleStatus =
   | "REJECTED"
   | "ACHIEVED"
   | "MISSED"
-  | "ARCHIVED";
+  | "ARCHIVED"
+  | "AI_DRAFT"
+  | "UNDER_REVIEW"
+  | "PENDING_PARENT_APPROVAL"
+  | "AI_REJECTED";
+
+export interface AICascadeDraft {
+  id: string;
+  title: string;
+  description?: string;
+  level: ObjectiveLevel;
+  okr_status: string;
+  review_status?: string;
+  ai_generated: boolean;
+  ai_confidence?: number;
+  ai_generation_reason?: string;
+  ai_generation_version?: number;
+  alignment_score?: number;
+  parent_id?: string;
+  parent_title?: string;
+  parent_objective_id?: string;
+  owner_id?: string;
+  owner_name?: string;
+  region_id?: string;
+  quarter?: string;
+  year?: number;
+  submitted_for_parent_approval_at?: string | null;
+  rejection_reason?: string | null;
+  created_at?: string;
+  key_results?: KeyResult[];
+  ai_metadata?: Record<string, unknown>;
+  ai_prompt_tokens?: number | null;
+  ai_completion_tokens?: number | null;
+  ai_total_tokens?: number | null;
+}
+
+export interface AICascadeVersion {
+  id: string;
+  objective_id: string;
+  version: number;
+  change_type: string;
+  title: string;
+  description?: string;
+  key_results: KeyResult[];
+  ai_metadata?: Record<string, unknown>;
+  changed_by_id?: string;
+  created_at?: string;
+}
+
+export interface AlignmentPreview {
+  child_id: string;
+  child_title: string;
+  child_description?: string;
+  child_level: string;
+  parent_id: string;
+  parent_title: string;
+  parent_description?: string;
+  parent_level: string;
+  alignment_score?: number;
+  confidence?: number;
+  reasoning?: string;
+  child_key_results: { title: string; target_value: number; unit: string }[];
+  parent_key_results: { title: string; target_value: number; unit: string }[];
+}
+
+export interface CascadeNotification {
+  id: string;
+  objective_id: string;
+  event_type: string;
+  title: string;
+  body?: string;
+  is_read: boolean;
+  actor_user_id?: string;
+  created_at?: string;
+}
 
 export interface Objective {
   id: string;
@@ -1765,6 +1839,80 @@ class APIClient {
     return this.request("POST", `/api/okrs/hierarchy/${okrId}/reject`, undefined, {
       params: { rejection_reason: rejectionReason },
     });
+  }
+
+  // ========================================================================
+  // AI CASCADE ENDPOINTS
+  // ========================================================================
+
+  async getAiDraftOkrs(status?: string): Promise<AICascadeDraft[]> {
+    return this.request<AICascadeDraft[]>("GET", "/api/okrs/ai-drafts", undefined, {
+      params: status ? { status } : {},
+    });
+  }
+
+  async getParentApprovalQueue(): Promise<AICascadeDraft[]> {
+    return this.request<AICascadeDraft[]>("GET", "/api/okrs/parent-approval-queue");
+  }
+
+  async reviewAiDraft(
+    objId: string,
+    body: { title?: string; description?: string; key_results?: KeyResultCreate[] },
+  ): Promise<AICascadeDraft> {
+    return this.request<AICascadeDraft>("PUT", `/api/okrs/${objId}/review`, body);
+  }
+
+  async submitAiDraftForParentApproval(objId: string): Promise<AICascadeDraft> {
+    return this.request<AICascadeDraft>("POST", `/api/okrs/${objId}/submit-parent`);
+  }
+
+  async approveParentAiDraft(objId: string): Promise<AICascadeDraft> {
+    return this.request<AICascadeDraft>("POST", `/api/okrs/${objId}/approve-parent`);
+  }
+
+  async rejectParentAiDraft(objId: string, reason: string): Promise<AICascadeDraft> {
+    return this.request<AICascadeDraft>("POST", `/api/okrs/${objId}/reject-parent`, { reason });
+  }
+
+  async rejectAiDraft(objId: string, reason: string): Promise<AICascadeDraft> {
+    return this.request<AICascadeDraft>("POST", `/api/okrs/${objId}/reject-ai`, { reason });
+  }
+
+  async regenerateAiDraft(objId: string): Promise<AICascadeDraft> {
+    return this.request<AICascadeDraft>("POST", `/api/okrs/${objId}/regenerate`);
+  }
+
+  async triggerOkrCascade(objId: string): Promise<{ message: string; parent_id: string }> {
+    return this.request("POST", `/api/okrs/${objId}/cascade`);
+  }
+
+  async getAiCascadeVersions(objId: string): Promise<AICascadeVersion[]> {
+    return this.request<AICascadeVersion[]>("GET", `/api/okrs/${objId}/versions`);
+  }
+
+  async getAiAlignmentPreview(objId: string): Promise<AlignmentPreview> {
+    return this.request<AlignmentPreview>("GET", `/api/okrs/${objId}/alignment-preview`);
+  }
+
+  async getAiCascadeDiff(objId: string, version?: number): Promise<{
+    current: { title: string; description?: string; version?: number; key_results: unknown[] };
+    previous: { title: string; description?: string; version: number; key_results: unknown[] };
+    title_changed: boolean;
+    description_changed: boolean;
+  }> {
+    return this.request("GET", `/api/okrs/${objId}/diff`, undefined, {
+      params: version ? { version } : {},
+    });
+  }
+
+  async getCascadeNotifications(unreadOnly = false): Promise<CascadeNotification[]> {
+    return this.request<CascadeNotification[]>("GET", "/api/okrs/cascade-notifications", undefined, {
+      params: unreadOnly ? { unread_only: true } : {},
+    });
+  }
+
+  async markCascadeNotificationRead(notifId: string): Promise<{ id: string; is_read: boolean }> {
+    return this.request("PATCH", `/api/okrs/cascade-notifications/${notifId}/read`);
   }
 
   async getMyApprovalQueue(params?: {

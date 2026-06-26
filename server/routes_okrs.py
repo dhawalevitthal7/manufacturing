@@ -246,6 +246,17 @@ def _obj_dict(obj, db):
         "function_area_label": FUNCTION_AREA_LABELS.get(obj.function_area or "", None),
         "function_node_id": obj.function_node_id,
         "can_publish_as_ceo": bool(owner and ceo_may_self_publish(obj, owner)),
+        "ai_generated": bool(getattr(obj, "ai_generated", False)),
+        "ai_confidence": getattr(obj, "ai_confidence", None),
+        "ai_generation_reason": getattr(obj, "ai_generation_reason", None),
+        "ai_generated_from_objective_id": getattr(obj, "ai_generated_from_objective_id", None),
+        "cascade_generation_status": getattr(obj, "cascade_generation_status", None),
+        "review_status": getattr(obj, "review_status", None),
+        "submitted_for_parent_approval_at": (
+            obj.submitted_for_parent_approval_at.isoformat()
+            if getattr(obj, "submitted_for_parent_approval_at", None)
+            else None
+        ),
         "created_at": obj.created_at.isoformat() if obj.created_at else None,
         "key_results": [_kr_dict(kr, db) for kr in krs],
     }

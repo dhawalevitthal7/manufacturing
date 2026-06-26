@@ -36,6 +36,12 @@ OKR_STATUS_ACHIEVED = "ACHIEVED"
 OKR_STATUS_MISSED = "MISSED"
 OKR_STATUS_ARCHIVED = "ARCHIVED"
 
+# AI-assisted hierarchical cascade lifecycle (extends manual lifecycle)
+OKR_STATUS_AI_DRAFT = "AI_DRAFT"
+OKR_STATUS_UNDER_REVIEW = "UNDER_REVIEW"
+OKR_STATUS_PENDING_PARENT = "PENDING_PARENT_APPROVAL"
+OKR_STATUS_AI_REJECTED = "AI_REJECTED"
+
 AUDIT_OKR_PUBLISH = "OKR_CEO_PUBLISH"
 AUDIT_OKR_ADMIN_APPROVE = "OKR_ADMIN_APPROVE"
 AUDIT_OKR_ADMIN_REJECT = "OKR_ADMIN_REJECT"
@@ -301,6 +307,14 @@ def activate_okr(okr: Objective, db: Session) -> None:
     now = datetime.utcnow()
     if not okr.creation_approved_at:
         okr.creation_approved_at = now
+
+    # Schedule AI cascade to next hierarchy level (non-blocking; never auto-activates children).
+    try:
+        from server.services.ai_cascade_engine import schedule_cascade_for_active_okr
+
+        schedule_cascade_for_active_okr(okr.id, okr.org_id)
+    except Exception:
+        pass  # Cascade failure must not block parent activation
 
 
 def submit_for_approval(

@@ -1,7 +1,7 @@
 import uuid
 import enum
 from datetime import datetime
-from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, ForeignKey, Text, UniqueConstraint, JSON, event
+from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, ForeignKey, Text, UniqueConstraint, JSON, event, Index
 from sqlalchemy.orm import relationship, validates
 from sqlalchemy.orm.attributes import set_committed_value
 from server.database import Base
@@ -396,7 +396,25 @@ class Objective(Base):
     # AI-Assisted OKR Fields
     ai_generated = Column(Boolean, default=False)  # Whether this OKR was AI-suggested
     ai_metadata = Column(Text, nullable=True)  # JSON metadata from AI generation
+    # AI cascade governance (child OKRs generated from an ACTIVE parent)
+    cascade_generation_status = Column(String, nullable=True)  # NONE, GENERATING, GENERATED, FAILED
+    ai_generated_from_objective_id = Column(
+        String, ForeignKey("objectives.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    ai_generation_version = Column(Integer, default=1)
+    ai_confidence = Column(Float, nullable=True)
+    ai_generation_reason = Column(Text, nullable=True)
+    review_status = Column(String, nullable=True)  # mirrors okr_status for AI cascade UX
+    reviewed_by_id = Column(String, ForeignKey("users.id"), nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
+    submitted_for_parent_approval_at = Column(DateTime, nullable=True)
+    approved_by_parent_id = Column(String, ForeignKey("users.id"), nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    ai_prompt_tokens = Column(Integer, nullable=True)
+    ai_completion_tokens = Column(Integer, nullable=True)
+    ai_total_tokens = Column(Integer, nullable=True)
     # Phase 6 lifecycle: DRAFT → PENDING_APPROVAL → ACTIVE | REJECTED | ACHIEVED | MISSED | ARCHIVED
+    # AI cascade extends with: AI_DRAFT → UNDER_REVIEW → PENDING_PARENT_APPROVAL → ACTIVE | AI_REJECTED
     okr_status = Column(String, default="DRAFT")
     rejection_reason = Column(Text, nullable=True)
     pending_approver_user_id = Column(String, ForeignKey("users.id"), nullable=True)
@@ -438,6 +456,43 @@ class KeyResult(Base):
     weight = Column(Float, default=1.0)  # for weighted progress calculation
     created_at = Column(DateTime, default=datetime.utcnow)
     ingest_source = relationship("KRIngestSource", back_populates="key_result", uselist=False)
+
+
+class ObjectiveVersion(Base):
+    """Version history for AI cascade OKR edits (preserves AI metadata lineage)."""
+
+    __tablename__ = "objective_versions"
+    __table_args__ = (Index("idx_obj_version_objective", "objective_id", "version"),)
+
+    id = Column(String, primary_key=True, default=gen_uuid)
+    objective_id = Column(String, ForeignKey("objectives.id", ondelete="CASCADE"), nullable=False)
+    org_id = Column(String, ForeignKey("organizations.id"), nullable=False)
+    version = Column(Integer, nullable=False)
+    change_type = Column(String, nullable=False)  # AI_GENERATED, EDIT, REGENERATE, SUBMIT, APPROVE, REJECT
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    key_results_snapshot = Column(Text, nullable=True)  # JSON array
+    ai_metadata_snapshot = Column(Text, nullable=True)
+    changed_by_id = Column(String, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class OkrCascadeNotification(Base):
+    """In-app notifications for AI cascade workflow events."""
+
+    __tablename__ = "okr_cascade_notifications"
+    __table_args__ = (Index("idx_okr_cascade_notif_user", "recipient_user_id", "is_read"),)
+
+    id = Column(String, primary_key=True, default=gen_uuid)
+    org_id = Column(String, ForeignKey("organizations.id"), nullable=False)
+    objective_id = Column(String, ForeignKey("objectives.id", ondelete="CASCADE"), nullable=False)
+    recipient_user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    actor_user_id = Column(String, ForeignKey("users.id"), nullable=True)
+    event_type = Column(String, nullable=False)  # AI_DRAFT_READY, SUBMITTED, APPROVED, REJECTED, REGENERATED
+    title = Column(String, nullable=False)
+    body = Column(Text, nullable=True)
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class KRIngestSource(Base):
