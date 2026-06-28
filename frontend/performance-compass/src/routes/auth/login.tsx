@@ -106,10 +106,11 @@ function LoginPage() {
         </div>
 
         <div className="mt-8 space-y-3 text-center text-xs text-muted-foreground">
-          <p>Demo Credentials:</p>
-          <code className="block rounded bg-muted p-2">
-            Email: admin@example.com<br />
-            Password: Welcome@123
+          <p>Birla demo (after seed):</p>
+          <code className="block rounded bg-muted p-2 text-left">
+            CEO: ceo@birlacement.test<br />
+            Password: Test@1234<br />
+            <span className="text-muted-foreground/80">(all Birla users use this password)</span>
           </code>
         </div>
       </div>

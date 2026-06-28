@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -19,7 +20,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from server.database import SessionLocal
+from server.database import SessionLocal, commit_with_retry
 from server.models import KeyResult, Objective, OrgNode, Organization, User
 from server.roles import (
     SystemRole,
@@ -78,10 +79,14 @@ class CascadeTarget:
 
 
 def schedule_cascade_for_active_okr(parent_objective_id: str, org_id: str) -> None:
-    """Run cascade generation in a background thread (non-blocking)."""
+    """Run cascade generation in a background thread after caller commits."""
+
+    def _delayed_start() -> None:
+        time.sleep(1.5)  # allow parent ACTIVE status to commit before cascade reads DB
+        _run_cascade_background(parent_objective_id, org_id)
+
     thread = threading.Thread(
-        target=_run_cascade_background,
-        args=(parent_objective_id, org_id),
+        target=_delayed_start,
         daemon=True,
         name=f"ai-cascade-{parent_objective_id[:8]}",
     )
@@ -98,7 +103,7 @@ def _run_cascade_background(parent_objective_id: str, org_id: str) -> None:
         try:
             engine = AICascadeEngine(db)
             engine.generate_cascade_for_parent(parent_objective_id, org_id)
-            db.commit()
+            commit_with_retry(db)
             logger.info(
                 "AI cascade completed for parent %s (attempt %s)",
                 parent_objective_id,
@@ -159,7 +164,9 @@ class AICascadeEngine:
             return []
 
         parent.cascade_generation_status = "GENERATING"
-        self.db.flush()
+        from server.database import flush_with_retry
+
+        flush_with_retry(self.db)
 
         org = self.db.query(Organization).filter(Organization.id == org_id).first()
         targets = self._resolve_child_targets(org_id, parent_level, child_level, parent)
@@ -214,10 +221,24 @@ class AICascadeEngine:
                     "model": suggestion.get("model"),
                     "confidence": suggestion.get("confidence"),
                 },
+                db=self.db,
             )
 
-        parent.cascade_generation_status = "GENERATED" if created_ids else "NONE"
-        self.db.flush()
+            # Commit per draft — avoids long write locks that block OKR creation.
+            try:
+                commit_with_retry(self.db)
+                parent = (
+                    self.db.query(Objective)
+                    .filter(Objective.id == parent_objective_id)
+                    .first()
+                )
+            except Exception:
+                self.db.rollback()
+                raise
+
+        if parent:
+            parent.cascade_generation_status = "GENERATED" if created_ids else "NONE"
+            commit_with_retry(self.db)
         return created_ids
 
     def _resolve_child_targets(
@@ -616,10 +637,13 @@ class AICascadeEngine:
             entity_type="OBJECTIVE",
             entity_id=okr.id,
             details={"parent_id": parent.id},
+            db=self.db,
         )
         return okr
 
-    def approve_by_parent(self, okr: Objective, actor: User) -> Objective:
+    def approve_by_parent(
+        self, okr: Objective, actor: User, *, schedule_next_cascade: bool = True
+    ) -> Objective:
         parent = self._parent_objective(okr)
         if not parent:
             raise ValueError("Parent not found")
@@ -653,13 +677,15 @@ class AICascadeEngine:
             entity_type="OBJECTIVE",
             entity_id=okr.id,
             details={"parent_id": parent.id},
+            db=self.db,
         )
 
-        # Cascade to next level if enabled for this child level as parent.
-        try:
-            schedule_cascade_for_active_okr(okr.id, okr.org_id)
-        except Exception:
-            pass
+        # Cascade to next level after commit (delayed thread avoids read-before-commit race).
+        if schedule_next_cascade:
+            try:
+                schedule_cascade_for_active_okr(okr.id, okr.org_id)
+            except Exception:
+                pass
 
         return okr
 
@@ -696,6 +722,7 @@ class AICascadeEngine:
             entity_type="OBJECTIVE",
             entity_id=okr.id,
             details={"parent_id": parent.id, "reason": reason},
+            db=self.db,
         )
         return okr
 
@@ -768,6 +795,7 @@ class AICascadeEngine:
             entity_type="OBJECTIVE",
             entity_id=okr.id,
             details={"parent_id": parent.id, "version": okr.ai_generation_version},
+            db=self.db,
         )
         self.db.flush()
         return okr

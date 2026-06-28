@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from typing import Optional, List
 from datetime import datetime
 import uuid
+from sqlalchemy.exc import OperationalError
 from server.database import get_db
 from server.models import (
     Objective, KeyResult, ProgressUpdate, ProgressSubmission, User, ReviewCycle, KRIngestSource,
@@ -584,14 +585,25 @@ def create_objective(
         function_area=fa,
         function_node_id=fn_id,
     )
-    db.add(obj)
-    db.flush()
     try:
-        enqueue_okr_creation_approval(db, obj, org_id, creator)
+        from server.database import sqlite_write
+
+        with sqlite_write():
+            db.add(obj)
+            db.flush()
+            enqueue_okr_creation_approval(db, obj, org_id, creator)
+            db.commit()
     except ValueError as e:
         db.rollback()
         raise HTTPException(400, str(e))
-    db.commit()
+    except OperationalError as e:
+        db.rollback()
+        if "locked" in str(e).lower():
+            raise HTTPException(
+                503,
+                "Database is busy. Stop any running cascade scripts, restart the backend, and try again.",
+            )
+        raise
     db.refresh(obj)
     return _obj_dict(obj, db)
 

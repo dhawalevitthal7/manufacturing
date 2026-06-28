@@ -3,10 +3,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI, Request, Depends, HTTPException
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import OperationalError
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from server.database import engine, Base, get_db
+from server.database import engine, Base, get_db, ensure_wal_mode
 from server.auth import decode_access_token
 from server.schema_migrations import apply_sqlite_schema_migrations
 from server.models import User, Organization
@@ -35,9 +37,27 @@ from server.routes_okrs_ai_cascade import router as okrs_ai_cascade_router
 import os
 
 Base.metadata.create_all(bind=engine)
+ensure_wal_mode()
 apply_sqlite_schema_migrations(engine)
 
 app = FastAPI(title="Manufacturing Performance OS", version="1.0.0")
+
+
+@app.exception_handler(OperationalError)
+async def sqlite_operational_error_handler(_request: Request, exc: OperationalError):
+    if "locked" in str(exc).lower():
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": (
+                    "Database is temporarily busy. Please retry in a few seconds. "
+                    "If this persists, restart the backend and avoid running "
+                    "cascade scripts while the server is active."
+                )
+            },
+        )
+    raise exc
+
 
 app.add_middleware(
     CORSMiddleware,

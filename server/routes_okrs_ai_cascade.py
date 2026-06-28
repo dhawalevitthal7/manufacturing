@@ -23,6 +23,7 @@ from server.services.objective_version_service import (
     versions_to_dicts,
 )
 from server.services.okr_lifecycle_service import (
+    OKR_STATUS_ACTIVE,
     OKR_STATUS_AI_DRAFT,
     OKR_STATUS_PENDING_PARENT,
     OKR_STATUS_UNDER_REVIEW,
@@ -166,6 +167,140 @@ def objective_diff(
     if not prev:
         raise HTTPException(404, "No prior version found")
     return build_diff_view(db, current=obj, previous_version=prev)
+
+
+@router.post("/cascade-workflow/process-pending")
+def process_pending_cascade_tree(
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_jwt_payload),
+    parent_id: str = "",
+):
+    """
+    CEO/admin: auto-submit and parent-approve all pending AI drafts in a cascade tree,
+    then synchronously generate the next hierarchy level after each approval.
+    """
+    org_id = payload.get("org_id", "")
+    user = _actor(db, payload)
+    role = normalize_role(user.system_role)
+    if role not in (SystemRole.SUPER_ADMIN, SystemRole.CEO):
+        raise HTTPException(403, "CEO or SUPER_ADMIN required")
+
+    root_q = db.query(Objective).filter(
+        Objective.org_id == org_id,
+        Objective.level == "ORGANIZATION",
+        Objective.okr_status == OKR_STATUS_ACTIVE,
+    )
+    if parent_id:
+        root_q = root_q.filter(Objective.id == parent_id)
+    else:
+        root_q = root_q.order_by(Objective.created_at.desc())
+    root = root_q.first()
+    if not root:
+        raise HTTPException(404, "No ACTIVE organization OKR found")
+
+    engine = AICascadeEngine(db)
+    tree_ids = _collect_tree_ids(db, root.id)
+    approved = 0
+    generated = 0
+    draft_statuses = [
+        OKR_STATUS_AI_DRAFT,
+        OKR_STATUS_UNDER_REVIEW,
+        OKR_STATUS_PENDING_PARENT,
+    ]
+
+    for _ in range(500):
+        draft = (
+            db.query(Objective)
+            .filter(
+                Objective.id.in_(tree_ids),
+                Objective.okr_status.in_(draft_statuses),
+            )
+            .order_by(Objective.level, Objective.created_at)
+            .first()
+        )
+        if not draft:
+            break
+        owner = db.query(User).filter(User.id == draft.owner_id).first()
+        if not owner:
+            break
+        try:
+            if draft.okr_status == OKR_STATUS_AI_DRAFT:
+                engine.start_review(draft, owner)
+            if draft.okr_status in (OKR_STATUS_AI_DRAFT, OKR_STATUS_UNDER_REVIEW):
+                engine.submit_for_parent_approval(draft, owner)
+            parent = engine._parent_objective(draft)
+            if not parent or draft.okr_status != OKR_STATUS_PENDING_PARENT:
+                break
+            approver = db.query(User).filter(User.id == parent.owner_id).first()
+            if not approver:
+                break
+            engine.approve_by_parent(draft, approver, schedule_next_cascade=False)
+            db.commit()
+            db.refresh(draft)
+            approved += 1
+            if (draft.okr_status or "").upper() == "ACTIVE":
+                new_ids = engine.generate_cascade_for_parent(draft.id, draft.org_id)
+                db.commit()
+                generated += len(new_ids)
+            tree_ids = _collect_tree_ids(db, root.id)
+        except ValueError as exc:
+            db.rollback()
+            raise HTTPException(400, str(exc))
+
+    # Generate individual drafts for ACTIVE teams missing children
+    for team in db.query(Objective).filter(
+        Objective.id.in_(tree_ids),
+        Objective.level == "TEAM",
+        Objective.okr_status == OKR_STATUS_ACTIVE,
+        Objective.ai_generated == True,
+    ):
+        if db.query(Objective).filter(
+            Objective.ai_generated_from_objective_id == team.id
+        ).count():
+            continue
+        new_ids = engine.generate_cascade_for_parent(team.id, team.org_id)
+        db.commit()
+        generated += len(new_ids)
+        tree_ids = _collect_tree_ids(db, root.id)
+
+    summary = _cascade_tree_summary(db, root.id)
+    return {
+        "root_id": root.id,
+        "root_title": root.title,
+        "approved_count": approved,
+        "generated_count": generated,
+        "summary_by_level": summary,
+    }
+
+
+def _collect_tree_ids(db: Session, root_id: str) -> set[str]:
+    ids = {root_id}
+    stack = [root_id]
+    while stack:
+        pid = stack.pop()
+        for (cid,) in db.query(Objective.id).filter(
+            Objective.ai_generated_from_objective_id == pid
+        ):
+            if cid not in ids:
+                ids.add(cid)
+                stack.append(cid)
+    return ids
+
+
+def _cascade_tree_summary(db: Session, root_id: str) -> dict:
+    from collections import defaultdict
+
+    by_level: dict = defaultdict(lambda: defaultdict(int))
+    for oid in _collect_tree_ids(db, root_id):
+        if oid == root_id:
+            o = db.query(Objective).filter(Objective.id == oid).first()
+            if o:
+                by_level[o.level][o.okr_status] += 1
+            continue
+        o = db.query(Objective).filter(Objective.id == oid).first()
+        if o and o.ai_generated:
+            by_level[o.level][o.okr_status] += 1
+    return {lvl: dict(st) for lvl, st in by_level.items()}
 
 
 @router.post("/{obj_id}/cascade")

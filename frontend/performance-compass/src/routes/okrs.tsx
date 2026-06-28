@@ -22,7 +22,7 @@ import { ValidationQueue } from "@/components/okr/validation-queue";
 import { OkrPendingApprovals } from "@/components/okr/okr-pending-approvals";
 import { AiSuggestedOkrsPanel } from "@/components/okr/ai-suggested-okrs-panel";
 import { canValidateOkrProgress } from "@/utils/okr-permissions";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { ObjectiveLevel } from "@/lib/api";
 
@@ -215,6 +215,24 @@ function OKRsPage() {
     setCreateDialogOpen(true);
   };
 
+  const queryClient = useQueryClient();
+  const isCeoOrAdmin = role === "CEO" || role === "SUPER_ADMIN";
+
+  const processCascadeTree = useMutation({
+    mutationFn: () => api.processPendingCascadeTree(),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["objectives"] });
+      queryClient.invalidateQueries({ queryKey: ["ai-drafts"] });
+      queryClient.invalidateQueries({ queryKey: ["parent-approval-queue"] });
+      alert(
+        `Cascade processed: ${data.approved_count} approved, ${data.generated_count} new drafts generated.\n` +
+          Object.entries(data.summary_by_level || {})
+            .map(([lvl, counts]) => `${lvl}: ${JSON.stringify(counts)}`)
+            .join("\n"),
+      );
+    },
+  });
+
   const handleDeleteOKR = async (id: string) => {
     if (confirm("Delete this OKR and all its children?")) {
       deleteObj.mutate(id);
@@ -269,6 +287,25 @@ function OKRsPage() {
           {canDraft && (
             <Button onClick={() => handleCreateOKR()} className="h-9">
               <Plus className="h-4 w-4 mr-1" /> Draft New OKR
+            </Button>
+          )}
+          {isCeoOrAdmin && (
+            <Button
+              variant="outline"
+              className="h-9"
+              disabled={processCascadeTree.isPending}
+              onClick={() => {
+                if (confirm("Process all pending AI cascade drafts through every hierarchy level?")) {
+                  processCascadeTree.mutate();
+                }
+              }}
+            >
+              {processCascadeTree.isPending ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4 mr-1" />
+              )}
+              Complete AI Cascade
             </Button>
           )}
         </div>

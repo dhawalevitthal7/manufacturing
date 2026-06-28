@@ -1886,6 +1886,18 @@ class APIClient {
     return this.request("POST", `/api/okrs/${objId}/cascade`);
   }
 
+  async processPendingCascadeTree(parentId?: string): Promise<{
+    root_id: string;
+    root_title: string;
+    approved_count: number;
+    generated_count: number;
+    summary_by_level: Record<string, Record<string, number>>;
+  }> {
+    return this.request("POST", "/api/okrs/cascade-workflow/process-pending", undefined, {
+      params: parentId ? { parent_id: parentId } : {},
+    });
+  }
+
   async getAiCascadeVersions(objId: string): Promise<AICascadeVersion[]> {
     return this.request<AICascadeVersion[]>("GET", `/api/okrs/${objId}/versions`);
   }
