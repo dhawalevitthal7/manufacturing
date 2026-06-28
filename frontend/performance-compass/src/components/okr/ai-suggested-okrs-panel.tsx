@@ -4,9 +4,20 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Loader2, Sparkles, RefreshCw, Send, CheckCircle2, XCircle, Eye } from "lucide-react";
+import {
+  Loader2,
+  Sparkles,
+  RefreshCw,
+  Send,
+  CheckCircle2,
+  XCircle,
+  Eye,
+  Pencil,
+} from "lucide-react";
 import { api, type AICascadeDraft } from "@/lib/api";
+import { useAuthStore } from "@/lib/stores/auth-store";
 import { AiCascadeDetailDrawer } from "@/components/okr/ai-cascade-detail-drawer";
+import { AiCascadeEditDialog } from "@/components/okr/ai-cascade-edit-dialog";
 
 function statusBadge(status: string) {
   const map: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -28,8 +39,10 @@ interface Props {
 }
 
 export function AiSuggestedOkrsPanel({ mode }: Props) {
+  const { user } = useAuthStore();
   const queryClient = useQueryClient();
   const [detailDraft, setDetailDraft] = useState<AICascadeDraft | null>(null);
+  const [editDraft, setEditDraft] = useState<AICascadeDraft | null>(null);
 
   const { data: drafts = [], isLoading, error } = useQuery({
     queryKey: mode === "parent_approval" ? ["parent-approval-queue"] : ["ai-drafts"],
@@ -72,10 +85,13 @@ export function AiSuggestedOkrsPanel({ mode }: Props) {
     onSuccess: invalidate,
   });
 
-  const startReview = useMutation({
-    mutationFn: (id: string) => api.reviewAiDraft(id, {}),
-    onSuccess: invalidate,
-  });
+  const isChildOwner = (draft: AICascadeDraft) =>
+    !!user?.id && draft.owner_id === user.id;
+
+  const canChildEdit = (draft: AICascadeDraft) =>
+    mode === "child_review" &&
+    isChildOwner(draft) &&
+    ["AI_DRAFT", "UNDER_REVIEW"].includes(draft.okr_status);
 
   if (isLoading) {
     return (
@@ -110,6 +126,15 @@ export function AiSuggestedOkrsPanel({ mode }: Props) {
 
   return (
     <>
+      {mode === "child_review" && (
+        <Alert className="mb-4 border-primary/30 bg-primary/5">
+          <AlertDescription className="text-sm">
+            <strong>Your workflow:</strong> Edit the AI suggestion to match your regional priorities →
+            save changes → submit to your parent (CEO) for approval. You do not approve your own OKR here.
+          </AlertDescription>
+        </Alert>
+      )}
+
       <div className="space-y-4">
         {drafts.map((draft: AICascadeDraft) => (
           <Card key={draft.id} className="border-primary/20">
@@ -151,9 +176,6 @@ export function AiSuggestedOkrsPanel({ mode }: Props) {
                 {draft.ai_total_tokens != null && (
                   <span>{draft.ai_total_tokens} tokens</span>
                 )}
-                {draft.ai_generation_reason && (
-                  <span className="italic">{draft.ai_generation_reason}</span>
-                )}
               </div>
 
               {draft.key_results && draft.key_results.length > 0 && (
@@ -169,6 +191,24 @@ export function AiSuggestedOkrsPanel({ mode }: Props) {
                 </ul>
               )}
 
+              {mode === "child_review" && draft.rejection_reason && canChildEdit(draft) && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  Parent feedback: {draft.rejection_reason}
+                </p>
+              )}
+
+              {mode === "child_review" && draft.okr_status === "PENDING_PARENT_APPROVAL" && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  Submitted — waiting for {draft.parent_title ? "parent" : "CEO"} approval. Editing is locked.
+                </p>
+              )}
+
+              {mode === "child_review" && !isChildOwner(draft) && user?.system_role === "CEO" && (
+                <p className="text-xs text-muted-foreground">
+                  Assigned to {draft.owner_name || "regional owner"} for review and edit.
+                </p>
+              )}
+
               <div className="flex flex-wrap gap-2 pt-1">
                 <Button
                   size="sm"
@@ -178,47 +218,41 @@ export function AiSuggestedOkrsPanel({ mode }: Props) {
                   <Eye className="h-3 w-3 mr-1" /> Preview / History
                 </Button>
 
-                {mode === "child_review" && (
+                {canChildEdit(draft) && (
                   <>
-                    {draft.okr_status === "AI_DRAFT" && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => startReview.mutate(draft.id)}
-                        disabled={startReview.isPending}
-                      >
-                        Review
-                      </Button>
-                    )}
-                    {["AI_DRAFT", "UNDER_REVIEW"].includes(draft.okr_status) && (
-                      <>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => regenerate.mutate(draft.id)}
-                          disabled={regenerate.isPending}
-                        >
-                          <RefreshCw className="h-3 w-3 mr-1" /> Regenerate
-                        </Button>
-                        <Button
-                          size="sm"
-                          onClick={() => submitParent.mutate(draft.id)}
-                          disabled={submitParent.isPending}
-                        >
-                          <Send className="h-3 w-3 mr-1" /> Submit for Approval
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => {
-                            const reason = prompt("Reason for rejecting this AI suggestion?");
-                            if (reason) rejectAi.mutate({ id: draft.id, reason });
-                          }}
-                        >
-                          <XCircle className="h-3 w-3 mr-1" /> Reject
-                        </Button>
-                      </>
-                    )}
+                    <Button
+                      size="sm"
+                      variant="default"
+                      onClick={() => setEditDraft(draft)}
+                    >
+                      <Pencil className="h-3 w-3 mr-1" /> Edit & customize
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => regenerate.mutate(draft.id)}
+                      disabled={regenerate.isPending}
+                    >
+                      <RefreshCw className="h-3 w-3 mr-1" /> Regenerate with AI
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => submitParent.mutate(draft.id)}
+                      disabled={submitParent.isPending}
+                    >
+                      <Send className="h-3 w-3 mr-1" /> Submit for approval
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => {
+                        const reason = prompt("Reason for rejecting this AI suggestion?");
+                        if (reason) rejectAi.mutate({ id: draft.id, reason });
+                      }}
+                    >
+                      <XCircle className="h-3 w-3 mr-1" /> Reject suggestion
+                    </Button>
                   </>
                 )}
 
@@ -233,13 +267,15 @@ export function AiSuggestedOkrsPanel({ mode }: Props) {
                     </Button>
                     <Button
                       size="sm"
-                      variant="destructive"
+                      variant="outline"
                       onClick={() => {
-                        const reason = prompt("Reason for rejection?");
+                        const reason = prompt(
+                          "What should the owner change? They can edit and resubmit.",
+                        );
                         if (reason) rejectParent.mutate({ id: draft.id, reason });
                       }}
                     >
-                      <XCircle className="h-3 w-3 mr-1" /> Reject
+                      <XCircle className="h-3 w-3 mr-1" /> Send back for edits
                     </Button>
                   </>
                 )}
@@ -249,10 +285,24 @@ export function AiSuggestedOkrsPanel({ mode }: Props) {
         ))}
       </div>
 
+      <AiCascadeEditDialog
+        draft={editDraft}
+        open={!!editDraft}
+        onOpenChange={(open) => !open && setEditDraft(null)}
+        onSaved={invalidate}
+      />
+
       <AiCascadeDetailDrawer
         draft={detailDraft}
         open={!!detailDraft}
         onOpenChange={(open) => !open && setDetailDraft(null)}
+        canEdit={detailDraft ? canChildEdit(detailDraft) : false}
+        onEdit={() => {
+          if (detailDraft) {
+            setEditDraft(detailDraft);
+            setDetailDraft(null);
+          }
+        }}
       />
     </>
   );

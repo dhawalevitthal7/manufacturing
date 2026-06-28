@@ -7,17 +7,20 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, GitCompare, History } from "lucide-react";
+import { Loader2, GitCompare, History, Pencil } from "lucide-react";
 import { api, type AICascadeDraft } from "@/lib/api";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
 
 interface Props {
   draft: AICascadeDraft | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  canEdit?: boolean;
+  onEdit?: () => void;
 }
 
-export function AiCascadeDetailDrawer({ draft, open, onOpenChange }: Props) {
+export function AiCascadeDetailDrawer({ draft, open, onOpenChange, canEdit, onEdit }: Props) {
   const objId = draft?.id ?? "";
 
   const { data: alignment, isLoading: alignLoading } = useQuery({
@@ -48,6 +51,11 @@ export function AiCascadeDetailDrawer({ draft, open, onOpenChange }: Props) {
           <SheetDescription>
             Parent: {draft.parent_title || "—"} · {draft.level}
           </SheetDescription>
+          {canEdit && onEdit && (
+            <Button size="sm" className="mt-2 w-fit" onClick={onEdit}>
+              <Pencil className="h-3 w-3 mr-1" /> Edit & customize
+            </Button>
+          )}
         </SheetHeader>
 
         <Tabs defaultValue="alignment" className="mt-4">

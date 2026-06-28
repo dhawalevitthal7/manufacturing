@@ -6,6 +6,8 @@
  * Middleware on server injects org_id, user_id, role from JWT.
  */
 
+import { API_BASE_URL } from "./api-base";
+
 // ============================================================================
 // AUTH API TYPES
 // ============================================================================
@@ -1461,7 +1463,7 @@ class APIClient {
   private baseUrl: string;
   private token: string | null = null;
 
-  constructor(baseUrl: string = "http://localhost:8000") {
+  constructor(baseUrl: string = API_BASE_URL) {
     this.baseUrl = baseUrl;
     // Try to restore token from localStorage
     if (typeof window !== "undefined") {

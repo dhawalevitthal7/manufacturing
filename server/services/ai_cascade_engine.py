@@ -605,6 +605,7 @@ class AICascadeEngine:
         if okr.okr_status == OKR_STATUS_AI_DRAFT:
             okr.okr_status = OKR_STATUS_UNDER_REVIEW
             okr.review_status = OKR_STATUS_UNDER_REVIEW
+        okr.rejection_reason = None
         okr.reviewed_by_id = actor.id
         okr.reviewed_at = datetime.utcnow()
         record_objective_version(self.db, okr=okr, change_type="EDIT", changed_by_id=actor.id)
@@ -623,6 +624,7 @@ class AICascadeEngine:
         okr.okr_status = OKR_STATUS_PENDING_PARENT
         okr.review_status = OKR_STATUS_PENDING_PARENT
         okr.submitted_for_parent_approval_at = datetime.utcnow()
+        okr.rejection_reason = None
         okr.pending_approver_user_id = parent.owner_id
         okr.pending_approver_role = None
         self.db.flush()
@@ -704,17 +706,18 @@ class AICascadeEngine:
         ):
             raise ValueError("Only the parent OKR owner may reject")
 
-        okr.okr_status = OKR_STATUS_AI_REJECTED
-        okr.review_status = OKR_STATUS_AI_REJECTED
+        okr.okr_status = OKR_STATUS_UNDER_REVIEW
+        okr.review_status = OKR_STATUS_UNDER_REVIEW
         okr.rejection_reason = reason.strip()
         okr.pending_approver_user_id = None
+        okr.submitted_for_parent_approval_at = None
         self.db.flush()
 
         notify_parent_decision(
             self.db, okr=okr, actor=actor, approved=False, reason=reason
         )
         record_objective_version(
-            self.db, okr=okr, change_type="REJECT", changed_by_id=actor.id
+            self.db, okr=okr, change_type="PARENT_RETURNED", changed_by_id=actor.id
         )
         record_audit_event(
             org_id=okr.org_id,

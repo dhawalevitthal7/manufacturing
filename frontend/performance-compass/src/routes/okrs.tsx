@@ -426,7 +426,7 @@ function OKRsPage() {
               AI Suggested OKRs
             </h3>
             <p className="text-xs text-muted-foreground">
-              Review AI-generated OKRs cascaded from your parent objective. Edit, regenerate, or submit for parent approval.
+              Review AI-generated OKRs cascaded from your parent objective. Edit objectives and key results, then submit for parent approval.
             </p>
           </div>
           <AiSuggestedOkrsPanel mode="child_review" />
@@ -439,7 +439,7 @@ function OKRsPage() {
               Parent Approval Queue
             </h3>
             <p className="text-xs text-muted-foreground">
-              Child-level OKRs submitted for your approval after AI review.
+              Child OKRs submitted after regional/plant review. Approve to activate, or send back for edits.
             </p>
           </div>
           <AiSuggestedOkrsPanel mode="parent_approval" />

@@ -38,8 +38,9 @@ function normalizeConstellationResponse(
 }
 import { useAuthStore } from '@/lib/stores/auth-store';
 import { levelsToApiParam } from '@/utils/constellationFilterUtils';
+import { API_BASE_URL } from '@/lib/api-base';
 
-const BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const BASE_URL = API_BASE_URL;
 
 /**
  * Get auth headers with token

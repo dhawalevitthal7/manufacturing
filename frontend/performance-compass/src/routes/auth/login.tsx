@@ -110,7 +110,8 @@ function LoginPage() {
           <code className="block rounded bg-muted p-2 text-left">
             CEO: ceo@birlacement.test<br />
             Password: Test@1234<br />
-            <span className="text-muted-foreground/80">(all Birla users use this password)</span>
+            <span className="text-muted-foreground/80">(all Birla users use this password)</span><br />
+            <span className="text-muted-foreground/80">Backend: localhost:8001</span>
           </code>
         </div>
       </div>

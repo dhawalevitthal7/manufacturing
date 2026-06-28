@@ -12,6 +12,7 @@ import {
   useOrgTree,
 } from "@/lib/hooks";
 import { api, type PlantCreate } from "@/lib/api";
+import { API_BASE_URL } from "@/lib/api-base";
 import { flattenOrgNodes } from "@/lib/org-tree-utils";
 import {
   onboardScopeNeedsField,
@@ -214,7 +215,7 @@ export function AdminPanel() {
       const token = getToken();
       if (!token) { setErrorMessage("Not authenticated"); setLoading(false); return; }
 
-      const response = await fetch("http://localhost:8000/api/auth/onboard-employee", {
+      const response = await fetch(`${API_BASE_URL}/api/auth/onboard-employee`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({
