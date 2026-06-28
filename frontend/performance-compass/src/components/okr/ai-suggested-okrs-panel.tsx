@@ -127,6 +127,11 @@ export function AiSuggestedOkrsPanel({ mode }: Props) {
                 </div>
                 <div className="flex flex-wrap gap-1">
                   <Badge variant="outline" className="text-[10px]">AI Suggested</Badge>
+                  {draft.ai_metadata?.source === "rule_based" ? (
+                    <Badge variant="secondary" className="text-[10px]">Level-specific template</Badge>
+                  ) : draft.ai_metadata?.source === "azure_openai" ? (
+                    <Badge variant="secondary" className="text-[10px]">AI generated</Badge>
+                  ) : null}
                   {statusBadge(draft.okr_status)}
                 </div>
               </div>

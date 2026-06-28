@@ -5,30 +5,37 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Optional
 
+from server.services.cascade_ai_levels import LEVEL_CASCADE_GUIDANCE
 
-PROMPT_VERSION = "cascade_v1"
+
+PROMPT_VERSION = "cascade_v2"
 
 
 def build_cascade_system_prompt() -> str:
     return (
-        "You are an expert manufacturing OKR strategist. "
-        "Generate a child-level OKR that aligns with a parent objective. "
+        "You are an expert manufacturing OKR strategist specializing in hierarchical OKR cascading "
+        "for cement/industrial companies.\n\n"
+        "Your job: when a parent OKR becomes ACTIVE, invent a NEW child-level OKR with fresh "
+        "objectives and key results appropriate for the next hierarchy level. "
+        "Do NOT copy the parent objective verbatim or simply prefix parent key results.\n\n"
         "Return JSON only with this exact schema:\n"
         "{\n"
-        '  "objective": "<clear measurable objective>",\n'
-        '  "description": "<2-3 sentences explaining regional/plant responsibility>",\n'
+        '  "objective": "<new measurable objective for the child level>",\n'
+        '  "description": "<2-4 sentences: how this child OKR decomposes the parent>",\n'
         '  "alignment_score": <float 0-100>,\n'
         '  "confidence": <float 0-1>,\n'
-        '  "reasoning": "<brief summary of why this OKR supports the parent>",\n'
+        '  "reasoning": "<how each KR supports the parent KRs>",\n'
         '  "key_results": [\n'
-        '    {"title": "<KR>", "target": <number>, "unit": "%|units|days|MT|INR Cr"}\n'
+        '    {"title": "<NEW KR title — operational & level-specific>", "target": <number>, "unit": "%|MT|kcal/kg|hours|count|incidents"}\n'
         "  ]\n"
-        "}\n"
+        "}\n\n"
         "Rules:\n"
-        "- Provide 3-5 key results.\n"
-        "- Targets must be numeric.\n"
-        "- Reflect manufacturing context (cement, dispatch, kiln, safety, cost).\n"
-        "- Avoid duplicating the parent objective verbatim.\n"
+        "- Provide 3-5 key results that are NEW — not renamed copies of parent KRs.\n"
+        "- Each KR must be measurable at the child level (regional/plant/dept/team/individual).\n"
+        "- Decompose parent KRs: if parent says 'increase efficiency 20%', child KRs might be "
+        "kiln OEE, dispatch OTIF, energy kcal/kg, etc.\n"
+        "- Use manufacturing context: cement, kiln, clinker, dispatch, logistics, safety TRIR/LTI.\n"
+        "- Targets must be numeric and realistic for the scope.\n"
         "- Do not include markdown or prose outside JSON."
     )
 
@@ -38,6 +45,7 @@ def build_cascade_user_prompt(
     parent_objective: str,
     parent_description: Optional[str],
     parent_key_results: List[Dict[str, Any]],
+    parent_level: str,
     child_level: str,
     scope_name: str,
     scope_metadata: Optional[Dict[str, Any]] = None,
@@ -50,23 +58,35 @@ def build_cascade_user_prompt(
     )
     prev = ""
     if previous_okrs:
-        prev = "Previous OKRs at this level (avoid duplicates):\n" + "\n".join(
-            f"  - {t}" for t in previous_okrs[:5]
+        prev = (
+            "\nPrevious OKRs at this level (avoid duplicating titles):\n"
+            + "\n".join(f"  - {t}" for t in previous_okrs[:5])
         )
 
     meta = json.dumps(scope_metadata or {}, default=str)
+    level_guidance = LEVEL_CASCADE_GUIDANCE.get(
+        child_level.upper(),
+        "Generate operational key results appropriate for this hierarchy level.",
+    )
 
     return (
         f"Organization: {org_name or 'Manufacturing'}\n"
-        f"Parent level: ORGANIZATION\n"
+        f"Parent level: {parent_level}\n"
         f"Child level: {child_level}\n"
-        f"Scope: {scope_name}\n"
+        f"Scope unit: {scope_name}\n"
         f"Scope metadata: {meta}\n\n"
-        f"Parent Objective: {parent_objective}\n"
-        f"Parent Description: {parent_description or 'N/A'}\n"
+        f"=== PARENT OKR (already ACTIVE — do not copy verbatim) ===\n"
+        f"Objective: {parent_objective}\n"
+        f"Description: {parent_description or 'N/A'}\n"
         f"Parent Key Results:\n{kr_lines or '  (none)'}\n\n"
-        f"{prev}\n\n"
-        f"Generate one {child_level}-level OKR for '{scope_name}' that cascades from the parent."
+        f"=== CHILD LEVEL GUIDANCE ({child_level}) ===\n"
+        f"{level_guidance}\n\n"
+        f"=== YOUR TASK ===\n"
+        f"Invent ONE new {child_level}-level OKR for '{scope_name}' that:\n"
+        f"1. Aligns with the parent objective but uses fresh wording\n"
+        f"2. Contains 3-5 NEW key results this {child_level} owner can directly control\n"
+        f"3. Decomposes parent metrics into {child_level}-appropriate operational targets\n"
+        f"{prev}"
     )
 
 

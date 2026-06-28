@@ -94,13 +94,20 @@ def test_next_cascade_child_level():
 def test_rule_based_cascade_suggestion():
     svc = CascadeAIService()
     result = svc._rule_based_suggestion(
-        parent_objective="Grow revenue",
+        parent_objective="Increase Production efficiency by 20%",
+        parent_description="Corporate efficiency target",
+        parent_level="ORGANIZATION",
         child_level="PLANT",
         scope_name="Plant A",
-        parent_key_results=[{"title": "Sales up", "target_value": 10, "unit": "%"}],
+        parent_key_results=[{"title": "Reduce energy use", "target_value": 10, "unit": "%"}],
     )
     assert "Plant A" in result["objective"]
-    assert len(result["key_results"]) >= 1
+    assert result["source"] == "rule_based"
+    assert len(result["key_results"]) >= 3
+    # KRs must be level. operational titles — not prefixed parent KR copy
+    kr_titles = " ".join(kr["title"] for kr in result["key_results"])
+    assert "Reduce energy use" not in kr_titles
+    assert any("OEE" in kr["title"] or "clinker" in kr["title"].lower() for kr in result["key_results"])
 
 
 def test_ai_draft_lifecycle(db_session, org_and_ceo):

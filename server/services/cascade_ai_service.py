@@ -12,6 +12,11 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
+from server.services.cascade_ai_levels import (
+    LEVEL_CASCADE_GUIDANCE,
+    LEVEL_KR_TEMPLATES,
+    LEVEL_OBJECTIVE_TEMPLATES,
+)
 from server.services.cascade_ai_prompt import (
     PROMPT_VERSION,
     build_cascade_system_prompt,
@@ -33,6 +38,7 @@ class CascadeAIService:
         parent_objective: str,
         parent_description: Optional[str],
         parent_key_results: List[Dict[str, Any]],
+        parent_level: str,
         child_level: str,
         scope_name: str,
         scope_metadata: Optional[Dict[str, Any]] = None,
@@ -40,13 +46,14 @@ class CascadeAIService:
         org_name: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Call Azure OpenAI (with retries) or fall back to rule-based generation.
-        Returns normalized suggestion DTO.
+        Call Azure OpenAI (with retries) or fall back to level-specific rule-based generation.
+        Returns normalized suggestion DTO with NEW child-level content (not parent copy-paste).
         """
         user_prompt = build_cascade_user_prompt(
             parent_objective=parent_objective,
             parent_description=parent_description,
             parent_key_results=parent_key_results,
+            parent_level=parent_level,
             child_level=child_level,
             scope_name=scope_name,
             scope_metadata=scope_metadata,
@@ -76,6 +83,8 @@ class CascadeAIService:
         logger.info("Cascade AI fallback for scope=%s: %s", scope_name, last_error)
         return self._rule_based_suggestion(
             parent_objective=parent_objective,
+            parent_description=parent_description,
+            parent_level=parent_level,
             child_level=child_level,
             scope_name=scope_name,
             parent_key_results=parent_key_results,
@@ -101,39 +110,66 @@ class CascadeAIService:
         self,
         *,
         parent_objective: str,
+        parent_description: Optional[str],
+        parent_level: str,
         child_level: str,
         scope_name: str,
         parent_key_results: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
-        """Deterministic fallback when AI is unavailable."""
-        child_title = f"{scope_name}: Execute {child_level.lower()} plan for «{parent_objective[:80]}»"
+        """
+        Level-specific deterministic fallback when Azure OpenAI is unavailable.
+        Generates NEW operational KRs — does not prefix parent KR titles.
+        """
+        cl = (child_level or "").upper()
+        parent_short = (parent_objective or "")[:80]
+
+        obj_tpl = LEVEL_OBJECTIVE_TEMPLATES.get(
+            cl, "Execute {child} plan for «{parent}» at {scope}"
+        )
+        child_title = obj_tpl.format(
+            scope=scope_name,
+            parent=parent_short,
+            child=cl.title(),
+        )
+
+        kr_templates = LEVEL_KR_TEMPLATES.get(cl, LEVEL_KR_TEMPLATES["DEPARTMENT"])
         krs: List[Dict[str, Any]] = []
-        for i, pkr in enumerate(parent_key_results[:4]):
-            pt = pkr.get("title") or f"Parent KR {i + 1}"
+        for tpl in kr_templates[:4]:
+            title = str(tpl["title"]).format(scope=scope_name)
             krs.append(
                 {
-                    "title": f"{scope_name} — {pt}",
-                    "target": 15.0 + i * 5,
-                    "unit": pkr.get("unit") or "%",
+                    "title": title,
+                    "target": float(tpl["target"]),
+                    "unit": str(tpl["unit"]),
                 }
             )
-        if not krs:
-            krs = [
-                {"title": f"Improve {scope_name} operational KPI", "target": 10, "unit": "%"},
-                {"title": f"Reduce {scope_name} cost per unit", "target": 5, "unit": "%"},
-                {"title": f"Achieve {scope_name} safety target", "target": 0, "unit": "incidents"},
-            ]
+
+        # Enrich description with parent KR decomposition hint
+        parent_kr_summary = ", ".join(
+            (kr.get("title") or "")[:40] for kr in parent_key_results[:3]
+        )
+        guidance = LEVEL_CASCADE_GUIDANCE.get(cl, "")
+        description = (
+            f"This {cl}-level OKR decomposes the {parent_level} objective «{parent_short}» "
+            f"into operational targets owned by {scope_name}. "
+            f"{guidance[:200]}..."
+            if guidance
+            else f"Operational cascade for {scope_name} supporting parent goal."
+        )
+
+        reasoning = (
+            f"Rule-based {cl} cascade: parent KRs ({parent_kr_summary or 'n/a'}) were decomposed "
+            f"into {cl.lower()}-specific operational metrics for {scope_name}. "
+            f"Configure Azure OpenAI for richer AI-generated suggestions."
+        )
 
         return {
             "objective": child_title,
-            "description": (
-                f"{child_level.title()} cascade of parent objective for {scope_name}. "
-                f"Aligns execution with upstream strategy."
-            ),
+            "description": description,
             "key_results": krs,
-            "confidence": 0.55,
-            "alignment_score": 72.0,
-            "reasoning": "Rule-based cascade generated because AI was unavailable.",
+            "confidence": 0.62,
+            "alignment_score": 78.0,
+            "reasoning": reasoning,
             "prompt_version": PROMPT_VERSION,
             "source": "rule_based",
             "model": None,
