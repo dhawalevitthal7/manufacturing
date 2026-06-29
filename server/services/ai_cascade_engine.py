@@ -78,6 +78,36 @@ class CascadeTarget:
     team_id: Optional[str] = None
 
 
+def apply_cascade_scope_filters(query, child_level: str, target: CascadeTarget):
+    """
+    Narrow an Objective query to the single scope unit at ``child_level``.
+
+    Uses the most specific scope column for that level so siblings under the same
+    parent (e.g. multiple plants in one region) never collide.
+    """
+    cl = (child_level or "").upper()
+    if cl == "INDIVIDUAL" and target.owner_id:
+        return query.filter(Objective.owner_id == target.owner_id)
+    if cl == "TEAM" and target.team_id:
+        return query.filter(Objective.team_id == target.team_id)
+    if cl == "DEPARTMENT" and target.department_id:
+        return query.filter(Objective.department_id == target.department_id)
+    if cl == "PLANT" and target.plant_id:
+        return query.filter(Objective.plant_id == target.plant_id)
+    if cl == "REGION" and target.region_id:
+        return query.filter(Objective.region_id == target.region_id)
+    # Legacy / incomplete targets — most specific id wins
+    if target.team_id:
+        return query.filter(Objective.team_id == target.team_id)
+    if target.department_id:
+        return query.filter(Objective.department_id == target.department_id)
+    if target.plant_id:
+        return query.filter(Objective.plant_id == target.plant_id)
+    if target.region_id:
+        return query.filter(Objective.region_id == target.region_id)
+    return query
+
+
 def schedule_cascade_for_active_okr(parent_objective_id: str, org_id: str) -> None:
     """Run cascade generation in a background thread after caller commits."""
 
@@ -450,16 +480,7 @@ class AICascadeEngine:
                 [OKR_STATUS_AI_DRAFT, OKR_STATUS_UNDER_REVIEW, OKR_STATUS_PENDING_PARENT, OKR_STATUS_ACTIVE]
             ),
         )
-        if target.region_id:
-            q = q.filter(Objective.region_id == target.region_id)
-        elif target.plant_id:
-            q = q.filter(Objective.plant_id == target.plant_id)
-        elif target.department_id:
-            q = q.filter(Objective.department_id == target.department_id)
-        elif target.team_id and child_level == "TEAM":
-            q = q.filter(Objective.team_id == target.team_id)
-        elif child_level == "INDIVIDUAL":
-            q = q.filter(Objective.owner_id == target.owner_id)
+        q = apply_cascade_scope_filters(q, child_level, target)
         return q.first() is not None
 
     def _apply_token_usage(self, obj: Objective, suggestion: Dict[str, Any]) -> None:
@@ -544,8 +565,7 @@ class AICascadeEngine:
             Objective.org_id == org_id,
             Objective.level == child_level,
         )
-        if target.region_id:
-            q = q.filter(Objective.region_id == target.region_id)
+        q = apply_cascade_scope_filters(q, child_level, target)
         rows = q.limit(10).all()
         return [r[0] for r in rows if r[0]]
 

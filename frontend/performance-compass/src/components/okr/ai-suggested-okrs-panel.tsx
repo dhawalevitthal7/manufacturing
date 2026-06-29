@@ -223,7 +223,7 @@ export function AiSuggestedOkrsPanel({ mode }: Props) {
                     <Button
                       size="sm"
                       variant="default"
-                      onClick={() => setEditDraft(draft)}
+                      onClick={() => setEditDraft({ ...draft, key_results: draft.key_results ? [...draft.key_results] : [] })}
                     >
                       <Pencil className="h-3 w-3 mr-1" /> Edit & customize
                     </Button>

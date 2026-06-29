@@ -9,9 +9,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 import server.models  # noqa: F401
-from server.models import Base, KeyResult, Objective, OrgNode, Organization, User
+from server.models import Base, KeyResult, Objective, OrgNode, Organization, Team, TeamMember, User
 from server.auth import get_password_hash, create_access_token
-from server.services.ai_cascade_engine import AICascadeEngine
+from server.services.ai_cascade_engine import AICascadeEngine, CascadeTarget
 from server.services.cascade_ai_prompt import validate_cascade_response
 from server.services.cascade_ai_service import CascadeAIService
 from server.services.okr_lifecycle_service import (
@@ -238,6 +238,395 @@ def test_region_to_plant_cascade(db_session, org_and_ceo):
     draft = db_session.query(Objective).filter(Objective.id == created[0]).first()
     assert draft.level == "PLANT"
     assert draft.plant_id == plant_id
+
+
+def test_region_to_multiple_plants_cascade(db_session, org_and_ceo):
+    """Each plant under a region gets its own AI draft (not one draft per region)."""
+    org, ceo = org_and_ceo
+    region_id = str(uuid.uuid4())
+    region = OrgNode(
+        id=region_id,
+        org_id=org.id,
+        parent_id=org.id,
+        node_type="REGION",
+        name="West",
+        path=f"{org.id}.{region_id}",
+        depth=1,
+        is_active=True,
+    )
+    plant_ids = [str(uuid.uuid4()), str(uuid.uuid4())]
+    plants = []
+    heads = []
+    for i, pid in enumerate(plant_ids):
+        plants.append(
+            OrgNode(
+                id=pid,
+                org_id=org.id,
+                parent_id=region_id,
+                node_type="PLANT",
+                name=f"Plant {i + 1}",
+                path=f"{org.id}.{region_id}.{pid}",
+                depth=2,
+                is_active=True,
+            )
+        )
+        head = User(
+            id=str(uuid.uuid4()),
+            org_id=org.id,
+            email=f"ph{i}@test.local",
+            password_hash=get_password_hash("x"),
+            name=f"Plant Head {i + 1}",
+            system_role="PLANT_HEAD",
+            org_node_id=pid,
+            is_active=True,
+        )
+        heads.append(head)
+        plants[i].head_user_id = head.id
+
+    db_session.add(region)
+    db_session.add_all(plants + heads)
+
+    regional_okr = Objective(
+        id=str(uuid.uuid4()),
+        org_id=org.id,
+        owner_id=ceo.id,
+        title="Regional OKR multi-plant",
+        level="REGION",
+        region_id=region_id,
+        okr_status=OKR_STATUS_ACTIVE,
+        status="ACTIVE",
+        allows_cascade=True,
+    )
+    db_session.add(regional_okr)
+    db_session.commit()
+
+    engine = AICascadeEngine(db_session)
+    created = engine.generate_cascade_for_parent(regional_okr.id, org.id)
+    assert len(created) == 2
+
+    drafts = (
+        db_session.query(Objective)
+        .filter(Objective.ai_generated_from_objective_id == regional_okr.id)
+        .all()
+    )
+    assert len(drafts) == 2
+    assert {d.plant_id for d in drafts} == set(plant_ids)
+    assert {d.owner_id for d in drafts} == {h.id for h in heads}
+
+
+@pytest.mark.parametrize(
+    "child_level,scope_field,scope_a,scope_b,collision_field",
+    [
+        ("PLANT", "plant_id", "plant-a", "plant-b", "region_id"),
+        ("DEPARTMENT", "department_id", "dept-a", "dept-b", "plant_id"),
+        ("TEAM", "team_id", "team-a", "team-b", "department_id"),
+    ],
+)
+def test_draft_exists_scoped_per_sibling_not_ancestor(
+    db_session, org_and_ceo, child_level, scope_field, scope_a, scope_b, collision_field
+):
+    """Sibling scopes must not block each other (regression for region-only duplicate bug)."""
+    org, ceo = org_and_ceo
+    parent_id = str(uuid.uuid4())
+    shared_scope = {collision_field: "shared-ancestor-id"}
+
+    existing_kwargs = {
+        "id": str(uuid.uuid4()),
+        "org_id": org.id,
+        "owner_id": ceo.id,
+        "title": f"Existing {child_level} draft",
+        "level": child_level,
+        "okr_status": OKR_STATUS_AI_DRAFT,
+        "status": "ACTIVE",
+        "ai_generated": True,
+        "ai_generated_from_objective_id": parent_id,
+        scope_field: scope_a,
+        **shared_scope,
+    }
+    db_session.add(Objective(**existing_kwargs))
+    db_session.commit()
+
+    engine = AICascadeEngine(db_session)
+    target_a = CascadeTarget(
+        scope_id=scope_a,
+        scope_name="Scope A",
+        owner_id=ceo.id,
+        scope_metadata={},
+        **{scope_field: scope_a, **shared_scope},
+    )
+    target_b = CascadeTarget(
+        scope_id=scope_b,
+        scope_name="Scope B",
+        owner_id=ceo.id,
+        scope_metadata={},
+        **{scope_field: scope_b, **shared_scope},
+    )
+
+    assert engine._draft_exists(parent_id, child_level, target_a) is True
+    assert engine._draft_exists(parent_id, child_level, target_b) is False
+
+
+def test_draft_exists_scoped_per_individual_owner(db_session, org_and_ceo):
+    org, ceo = org_and_ceo
+    parent_id = str(uuid.uuid4())
+    team_id = str(uuid.uuid4())
+    user_a = str(uuid.uuid4())
+    user_b = str(uuid.uuid4())
+
+    db_session.add(
+        Objective(
+            id=str(uuid.uuid4()),
+            org_id=org.id,
+            owner_id=user_a,
+            title="Individual A",
+            level="INDIVIDUAL",
+            team_id=team_id,
+            okr_status=OKR_STATUS_AI_DRAFT,
+            status="ACTIVE",
+            ai_generated=True,
+            ai_generated_from_objective_id=parent_id,
+        )
+    )
+    db_session.commit()
+
+    engine = AICascadeEngine(db_session)
+    assert engine._draft_exists(
+        parent_id,
+        "INDIVIDUAL",
+        CascadeTarget(
+            scope_id=user_a,
+            scope_name="A",
+            owner_id=user_a,
+            scope_metadata={},
+            team_id=team_id,
+        ),
+    )
+    assert not engine._draft_exists(
+        parent_id,
+        "INDIVIDUAL",
+        CascadeTarget(
+            scope_id=user_b,
+            scope_name="B",
+            owner_id=user_b,
+            scope_metadata={},
+            team_id=team_id,
+        ),
+    )
+
+
+def test_plant_to_multiple_departments_cascade(db_session, org_and_ceo):
+    org, ceo = org_and_ceo
+    region_id = str(uuid.uuid4())
+    plant_id = str(uuid.uuid4())
+    region = OrgNode(
+        id=region_id,
+        org_id=org.id,
+        parent_id=org.id,
+        node_type="REGION",
+        name="West",
+        path=f"{org.id}.{region_id}",
+        depth=1,
+        is_active=True,
+    )
+    plant = OrgNode(
+        id=plant_id,
+        org_id=org.id,
+        parent_id=region_id,
+        node_type="PLANT",
+        name="Awarpur",
+        path=f"{org.id}.{region_id}.{plant_id}",
+        depth=2,
+        is_active=True,
+    )
+    dept_ids = [str(uuid.uuid4()), str(uuid.uuid4())]
+    depts = []
+    heads = []
+    for i, did in enumerate(dept_ids):
+        depts.append(
+            OrgNode(
+                id=did,
+                org_id=org.id,
+                parent_id=plant_id,
+                node_type="DEPARTMENT",
+                name=f"Dept {i + 1}",
+                path=f"{plant.path}.{did}",
+                depth=3,
+                is_active=True,
+            )
+        )
+        head = User(
+            id=str(uuid.uuid4()),
+            org_id=org.id,
+            email=f"hod{i}@test.local",
+            password_hash=get_password_hash("x"),
+            name=f"HOD {i + 1}",
+            system_role="DEPT_HEAD",
+            org_node_id=did,
+            is_active=True,
+        )
+        heads.append(head)
+        depts[i].head_user_id = head.id
+
+    db_session.add(region)
+    db_session.add(plant)
+    db_session.add_all(depts + heads)
+
+    plant_okr = Objective(
+        id=str(uuid.uuid4()),
+        org_id=org.id,
+        owner_id=ceo.id,
+        title="Plant OKR multi-dept",
+        level="PLANT",
+        region_id=region_id,
+        plant_id=plant_id,
+        okr_status=OKR_STATUS_ACTIVE,
+        status="ACTIVE",
+        allows_cascade=True,
+    )
+    db_session.add(plant_okr)
+    db_session.commit()
+
+    engine = AICascadeEngine(db_session)
+    created = engine.generate_cascade_for_parent(plant_okr.id, org.id)
+    assert len(created) == 2
+
+    drafts = (
+        db_session.query(Objective)
+        .filter(Objective.ai_generated_from_objective_id == plant_okr.id)
+        .all()
+    )
+    assert len(drafts) == 2
+    assert {d.department_id for d in drafts} == set(dept_ids)
+
+
+def test_department_to_multiple_teams_cascade(db_session, org_and_ceo):
+    org, ceo = org_and_ceo
+    region_id = str(uuid.uuid4())
+    plant_id = str(uuid.uuid4())
+    dept_id = str(uuid.uuid4())
+    dept = OrgNode(
+        id=dept_id,
+        org_id=org.id,
+        parent_id=plant_id,
+        node_type="DEPARTMENT",
+        name="Production",
+        path=f"{org.id}.{region_id}.{plant_id}.{dept_id}",
+        depth=3,
+        is_active=True,
+    )
+    team_ids = [str(uuid.uuid4()), str(uuid.uuid4())]
+    teams = []
+    leads = []
+    for i, tid in enumerate(team_ids):
+        teams.append(
+            OrgNode(
+                id=tid,
+                org_id=org.id,
+                parent_id=dept_id,
+                node_type="TEAM",
+                name=f"Shift {i + 1}",
+                path=f"{dept.path}.{tid}",
+                depth=4,
+                is_active=True,
+            )
+        )
+        lead = User(
+            id=str(uuid.uuid4()),
+            org_id=org.id,
+            email=f"lead{i}@test.local",
+            password_hash=get_password_hash("x"),
+            name=f"Lead {i + 1}",
+            system_role="TEAM_LEAD",
+            org_node_id=tid,
+            is_active=True,
+        )
+        leads.append(lead)
+        teams[i].head_user_id = lead.id
+
+    db_session.add(dept)
+    db_session.add_all(teams + leads)
+
+    dept_okr = Objective(
+        id=str(uuid.uuid4()),
+        org_id=org.id,
+        owner_id=ceo.id,
+        title="Dept OKR multi-team",
+        level="DEPARTMENT",
+        region_id=region_id,
+        plant_id=plant_id,
+        department_id=dept_id,
+        okr_status=OKR_STATUS_ACTIVE,
+        status="ACTIVE",
+        allows_cascade=True,
+    )
+    db_session.add(dept_okr)
+    db_session.commit()
+
+    engine = AICascadeEngine(db_session)
+    created = engine.generate_cascade_for_parent(dept_okr.id, org.id)
+    assert len(created) == 2
+
+    drafts = (
+        db_session.query(Objective)
+        .filter(Objective.ai_generated_from_objective_id == dept_okr.id)
+        .all()
+    )
+    assert {d.team_id for d in drafts} == set(team_ids)
+
+
+def test_team_to_multiple_individuals_cascade(db_session, org_and_ceo):
+    org, ceo = org_and_ceo
+    team_id = str(uuid.uuid4())
+    team = Team(
+        id=team_id,
+        org_id=org.id,
+        department_id=str(uuid.uuid4()),
+        name="Kiln Shift A",
+        is_active=True,
+    )
+    db_session.add(team)
+
+    employees = []
+    for i in range(2):
+        emp = User(
+            id=str(uuid.uuid4()),
+            org_id=org.id,
+            email=f"emp{i}@test.local",
+            password_hash=get_password_hash("x"),
+            name=f"Employee {i + 1}",
+            system_role="EMPLOYEE",
+            is_active=True,
+        )
+        employees.append(emp)
+        db_session.add(
+            TeamMember(org_id=org.id, team_id=team_id, user_id=emp.id, is_active=True)
+        )
+    db_session.add_all(employees)
+
+    team_okr = Objective(
+        id=str(uuid.uuid4()),
+        org_id=org.id,
+        owner_id=ceo.id,
+        title="Team OKR multi-individual",
+        level="TEAM",
+        team_id=team_id,
+        okr_status=OKR_STATUS_ACTIVE,
+        status="ACTIVE",
+        allows_cascade=True,
+    )
+    db_session.add(team_okr)
+    db_session.commit()
+
+    engine = AICascadeEngine(db_session)
+    created = engine.generate_cascade_for_parent(team_okr.id, org.id)
+    assert len(created) == 2
+
+    drafts = (
+        db_session.query(Objective)
+        .filter(Objective.ai_generated_from_objective_id == team_okr.id)
+        .all()
+    )
+    assert {d.owner_id for d in drafts} == {e.id for e in employees}
 
 
 def test_duplicate_prevention(db_session, org_and_ceo):
