@@ -53,6 +53,7 @@ class AIKeyResult(BaseModel):
     target: float
     unit: str
     due_date: str = ""
+    metric_type: str = "HIGHER_IS_BETTER"
 
 
 class AIOKRSuggestion(BaseModel):
@@ -125,6 +126,7 @@ def generate_okr_chat(
                         target=float(kr.get("target", 0)),
                         unit=kr.get("unit", ""),
                         due_date=kr.get("due_date", ""),
+                        metric_type=kr.get("metric_type", "HIGHER_IS_BETTER"),
                     )
                     for kr in raw_okr.get("key_results", [])
                 ],
@@ -204,6 +206,7 @@ def cascade_okr_chat(
                         target=float(kr.get("target", 0)),
                         unit=kr.get("unit", ""),
                         due_date=kr.get("due_date", "") or okr_due,
+                        metric_type=kr.get("metric_type", "HIGHER_IS_BETTER"),
                     )
                     for kr in raw_okr.get("key_results", [])
                 ],

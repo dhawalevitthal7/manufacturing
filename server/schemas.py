@@ -276,12 +276,25 @@ class KeyResultCreate(BaseModel):
     target_value: float = 100.0
     unit: str = "%"
     weight: float = 1.0
+    # Progress Normalization fields
+    kpi_behavior: str = "HIGHER_IS_BETTER"
+    target_min: Optional[float] = None    # For RANGE type
+    target_max: Optional[float] = None    # For RANGE type
+    tolerance: Optional[float] = None     # For RANGE type (% of range span)
+    allow_overachievement: bool = False
+    milestone_total: Optional[int] = None # For MILESTONE type
 
 class KeyResultUpdate(BaseModel):
     title: Optional[str] = None
     target_value: Optional[float] = None
     unit: Optional[str] = None
     weight: Optional[float] = None
+    kpi_behavior: Optional[str] = None
+    target_min: Optional[float] = None
+    target_max: Optional[float] = None
+    tolerance: Optional[float] = None
+    allow_overachievement: Optional[bool] = None
+    milestone_total: Optional[int] = None
 
 
 class KRIngestSourceConfigure(BaseModel):
@@ -294,11 +307,23 @@ class KRIngestSourceConfigure(BaseModel):
 
 
 class ProgressUpdateCreate(BaseModel):
-    """Legacy progress update. Kept for backward compatibility."""
-    new_value: float
+    """Legacy progress update. Kept for backward compatibility.
+    Accepts actual_value (preferred) or new_value (backward compat).
+    """
+    new_value: Optional[float] = None
+    actual_value: Optional[float] = None  # Preferred: raw business value
     notes: Optional[str] = None
     blockers: Optional[str] = None
     evidence_url: Optional[str] = None
+
+    @property
+    def effective_value(self) -> float:
+        """Return actual_value if provided, else new_value."""
+        if self.actual_value is not None:
+            return self.actual_value
+        if self.new_value is not None:
+            return self.new_value
+        return 0.0
 
 class ProgressSubmissionCreate(BaseModel):
     """
@@ -340,6 +365,13 @@ class ProgressSubmissionResponse(BaseModel):
     next_approver_role: Optional[str]
     created_at: str
     reviewed_at: Optional[str]
+    # Progress Normalization response fields
+    normalized_progress: Optional[float] = None
+    formula_used: Optional[str] = None
+    kpi_behavior: Optional[str] = None
+    actual_value: Optional[float] = None
+    target_value: Optional[float] = None
+    unit: Optional[str] = None
 
 
 # ===== CYCLES =====

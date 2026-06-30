@@ -75,13 +75,16 @@ def weighted_average(items: List[Tuple[float, float]]) -> float:
 
 
 def calculate_kr_progress(kr: KeyResult) -> float:
-    """Return a normalized 0-100 progress score for a key result."""
-    target = _to_float(kr.target_value, 0.0)
-    current = _to_float(kr.current_value, 0.0)
-    if target <= 0:
-        return 0.0
-    progress = (current / target) * 100.0
-    return round(min(100.0, max(0.0, progress)), 1)
+    """Return a normalized 0-100 progress score for a key result.
+
+    Delegates to the Progress Normalization Service which supports 6 KPI
+    behaviors (HIGHER_IS_BETTER, LOWER_IS_BETTER, TARGET_MATCH, BOOLEAN,
+    RANGE, MILESTONE).  Old KRs without ``kpi_behavior`` default to
+    HIGHER_IS_BETTER which preserves the original ``current/target × 100``
+    formula.
+    """
+    from server.services.progress_normalization_service import normalize_kr_progress
+    return normalize_kr_progress(kr)
 
 
 def calculate_objective_progress(krs: List[KeyResult]) -> Dict[str, Any]:

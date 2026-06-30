@@ -444,6 +444,16 @@ class ObjectiveConnection(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class KPIBehavior(str, enum.Enum):
+    """How a Key Result's progress should be calculated."""
+    HIGHER_IS_BETTER = "HIGHER_IS_BETTER"    # Production, Sales, Revenue
+    LOWER_IS_BETTER = "LOWER_IS_BETTER"      # Cost, Downtime, Waste
+    TARGET_MATCH = "TARGET_MATCH"            # Budget, Inventory, Workforce
+    BOOLEAN = "BOOLEAN"                      # Certification, Audit, Training
+    RANGE = "RANGE"                          # Temperature, Humidity, Pressure
+    MILESTONE = "MILESTONE"                  # ERP Migration, Plant Commissioning
+
+
 class KeyResult(Base):
     __tablename__ = "key_results"
     id = Column(String, primary_key=True, default=gen_uuid)
@@ -454,6 +464,17 @@ class KeyResult(Base):
     unit = Column(String, default="%")
     status = Column(String, default="NOT_STARTED")  # NOT_STARTED, IN_PROGRESS, COMPLETED
     weight = Column(Float, default=1.0)  # for weighted progress calculation
+    # ── Progress Normalization Fields (Phase: Normalization Engine) ──
+    kpi_behavior = Column(String, default=KPIBehavior.HIGHER_IS_BETTER.value)
+    target_min = Column(Float, nullable=True)       # Range lower bound
+    target_max = Column(Float, nullable=True)       # Range upper bound
+    tolerance = Column(Float, nullable=True)         # Range tolerance %
+    allow_overachievement = Column(Boolean, default=False)  # Allow > 100% display
+    normalized_progress = Column(Float, default=0.0) # Computed completion %
+    last_actual_value = Column(Float, nullable=True) # Last raw business value entered
+    last_calculated_at = Column(DateTime, nullable=True)
+    milestone_total = Column(Integer, nullable=True)     # Total milestones for MILESTONE type
+    milestone_completed = Column(Integer, nullable=True) # Completed milestones
     created_at = Column(DateTime, default=datetime.utcnow)
     ingest_source = relationship("KRIngestSource", back_populates="key_result", uselist=False)
 

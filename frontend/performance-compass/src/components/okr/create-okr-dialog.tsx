@@ -47,6 +47,7 @@ interface InlineKR {
   target: string;
   unit: string;
   weight: string;
+  kpi_behavior: string;
 }
 
 export function CreateOKRDialog({ open, onOpenChange, allowedLevels, defaultLevel, defaultPlantId }: Props) {
@@ -184,7 +185,7 @@ export function CreateOKRDialog({ open, onOpenChange, allowedLevels, defaultLeve
   const departmentNameForAI = selectedDept?.name || (plants as any[]).find((p: any) => p.id === plantId)?.name || "Manufacturing";
 
   const addInlineKR = () => {
-    setInlineKRs((prev) => [...prev, { title: "", target: "100", unit: "%", weight: "1" }]);
+    setInlineKRs((prev) => [...prev, { title: "", target: "100", unit: "%", weight: "1", kpi_behavior: "HIGHER_IS_BETTER" }]);
   };
 
   const removeInlineKR = (idx: number) => {
@@ -210,6 +211,7 @@ export function CreateOKRDialog({ open, onOpenChange, allowedLevels, defaultLeve
         target: String(kr.target),
         unit: kr.unit,
         weight: "1",
+        kpi_behavior: (kr as any).metric_type || "HIGHER_IS_BETTER",
       }))
     );
     setMode("manual"); // Switch to manual to let user review/edit
@@ -264,6 +266,7 @@ export function CreateOKRDialog({ open, onOpenChange, allowedLevels, defaultLeve
               target_value: parseFloat(kr.target) || 100,
               unit: kr.unit || "%",
               weight: parseFloat(kr.weight) || 1,
+              kpi_behavior: kr.kpi_behavior || "HIGHER_IS_BETTER",
             });
           } catch (e) {
             console.error("Failed to create KR:", e);
@@ -593,7 +596,7 @@ export function CreateOKRDialog({ open, onOpenChange, allowedLevels, defaultLeve
                 )}
 
                 {inlineKRs.map((kr, i) => (
-                  <div key={i} className="grid grid-cols-[1fr_80px_60px_50px_28px] gap-1.5 items-end">
+                  <div key={i} className="grid grid-cols-[minmax(0,1fr)_120px_80px_60px_50px_28px] gap-1.5 items-end">
                     <div>
                       {i === 0 && <Label className="text-[10px]">Title</Label>}
                       <Input
@@ -602,6 +605,25 @@ export function CreateOKRDialog({ open, onOpenChange, allowedLevels, defaultLeve
                         placeholder="e.g. Reduce defect rate"
                         className="h-8 text-xs"
                       />
+                    </div>
+                    <div>
+                      {i === 0 && <Label className="text-[10px]">Behavior</Label>}
+                      <Select
+                        value={kr.kpi_behavior}
+                        onValueChange={(val) => updateInlineKR(i, "kpi_behavior", val)}
+                      >
+                        <SelectTrigger className="h-8 text-xs px-2">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="HIGHER_IS_BETTER">Higher is Better</SelectItem>
+                          <SelectItem value="LOWER_IS_BETTER">Lower is Better</SelectItem>
+                          <SelectItem value="TARGET_MATCH">Target Match</SelectItem>
+                          <SelectItem value="BOOLEAN">Boolean (Yes/No)</SelectItem>
+                          <SelectItem value="RANGE">Range Band</SelectItem>
+                          <SelectItem value="MILESTONE">Milestone</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div>
                       {i === 0 && <Label className="text-[10px]">Target</Label>}

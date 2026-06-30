@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from server.models import (
     ApprovalStep,
+    AuditLog,
     KeyResult,
     Objective,
     ProgressSubmission,
@@ -496,7 +497,22 @@ def _finalize_progress_submission(
 
     previous_value = kr.current_value
     kr.current_value = final_value
-    pct = min((final_value / kr.target_value * 100) if kr.target_value > 0 else 0, 100)
+
+    # ── Normalization Engine: compute correct % based on KPI behavior ──
+    from server.services.progress_normalization_service import (
+        calculate_progress,
+        NormalizationError,
+    )
+    try:
+        norm_result = calculate_progress(kr, final_value)
+        pct = norm_result.normalized_progress
+    except NormalizationError:
+        # Fallback for malformed KRs
+        pct = min((final_value / kr.target_value * 100) if kr.target_value > 0 else 0, 100)
+
+    kr.normalized_progress = pct
+    kr.last_actual_value = final_value
+    kr.last_calculated_at = datetime.utcnow()
     kr.status = (
         "COMPLETED" if pct >= 100 else "IN_PROGRESS" if pct > 0 else "NOT_STARTED"
     )
@@ -515,6 +531,29 @@ def _finalize_progress_submission(
         validated_at=datetime.utcnow(),
     )
     db.add(audit)
+
+    # Audit log for normalization
+    try:
+        kpi_behavior = getattr(kr, "kpi_behavior", "HIGHER_IS_BETTER") or "HIGHER_IS_BETTER"
+        norm_audit = AuditLog(
+            org_id=submission.objective_id or "",
+            user_id=submission.submitted_by_id or "",
+            action="PROGRESS_NORMALIZATION",
+            entity_type="KEY_RESULT",
+            entity_id=kr.id,
+            details=json.dumps({
+                "actual_value": final_value,
+                "old_value": previous_value,
+                "normalized_progress": pct,
+                "kpi_behavior": kpi_behavior,
+                "target_value": kr.target_value,
+                "formula_used": norm_result.formula_used if 'norm_result' in dir() else "fallback",
+                "calculated_at": datetime.utcnow().isoformat(),
+            }),
+        )
+        db.add(norm_audit)
+    except Exception:
+        pass  # Non-blocking audit
 
     objective = db.query(Objective).filter(Objective.id == kr.objective_id).first()
     if objective:

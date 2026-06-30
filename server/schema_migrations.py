@@ -52,6 +52,18 @@ TABLE_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("ai_completion_tokens", "INTEGER"),
         ("ai_total_tokens", "INTEGER"),
     ],
+    "key_results": [
+        ("kpi_behavior", "VARCHAR(50) DEFAULT 'HIGHER_IS_BETTER'"),
+        ("target_min", "FLOAT"),
+        ("target_max", "FLOAT"),
+        ("tolerance", "FLOAT"),
+        ("allow_overachievement", "BOOLEAN DEFAULT FALSE"),
+        ("normalized_progress", "FLOAT DEFAULT 0.0"),
+        ("last_actual_value", "FLOAT"),
+        ("last_calculated_at", "TIMESTAMP"),
+        ("milestone_total", "INTEGER"),
+        ("milestone_completed", "INTEGER"),
+    ],
     "progress_updates": [
         ("validation_level", "VARCHAR(50)"),
         ("validation_chain", "TEXT"),
@@ -141,6 +153,22 @@ def apply_sqlite_schema_migrations(engine: Engine) -> None:
     # After all column additions, backfill org_nodes hierarchy
     _backfill_org_nodes(engine)
     _ensure_approval_steps_table(engine)
+    _backfill_key_results(engine)
+
+
+def _backfill_key_results(engine: Engine) -> None:
+    """Ensure existing KRs have a valid kpi_behavior."""
+    if engine.dialect.name != "sqlite":
+        return
+    
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE key_results "
+                "SET kpi_behavior = 'HIGHER_IS_BETTER' "
+                "WHERE kpi_behavior IS NULL"
+            )
+        )
 
 
 def _ensure_approval_steps_table(engine: Engine) -> None:

@@ -145,7 +145,7 @@ class AzureOpenAIService:
             '    "year": ' + str(year) + ',\n'
             '    "due_date": "' + due_date + '",\n'
             '    "key_results": [\n'
-            '      { "title": "<measurable KR>", "target": <number>, "unit": "<%|pts|$|units>", "due_date": "' + due_date + '" }\n'
+            '      { "title": "<measurable KR>", "target": <number>, "unit": "<%|pts|$|units>", "due_date": "' + due_date + '", "metric_type": "<HIGHER_IS_BETTER|LOWER_IS_BETTER|TARGET_MATCH|BOOLEAN|RANGE|MILESTONE>" }\n'
             "    ]\n"
             "  } | null\n"
             "}\n\n"
@@ -154,6 +154,7 @@ class AzureOpenAIService:
             "- Set has_suggestion=true only when all details are clear.\n"
             "- Key result targets must be numeric with valid units (%, pts, $, units, etc.).\n"
             "- Due date format: YYYY-MM-DD.\n"
+            "- Choose metric_type appropriately (e.g. Cost -> LOWER_IS_BETTER, Revenue -> HIGHER_IS_BETTER, Audit -> BOOLEAN). Default to HIGHER_IS_BETTER.\n"
             "- Keep reply concise and encouraging."
         )
 
@@ -230,12 +231,13 @@ class AzureOpenAIService:
             '    "year": ' + str(year) + ',\n'
             '    "due_date": "' + due_date + '",\n'
             '    "key_results": [\n'
-            '      { "title": "<measurable KR>", "target": <number>, "unit": "<unit>", "due_date": "' + due_date + '" }\n'
+            '      { "title": "<measurable KR>", "target": <number>, "unit": "<unit>", "due_date": "' + due_date + '", "metric_type": "<HIGHER_IS_BETTER|LOWER_IS_BETTER|TARGET_MATCH|BOOLEAN|RANGE|MILESTONE>" }\n'
             "    ]\n"
             "  } | null\n"
             "}\n\n"
             "Rules:\n"
             "- Make OKR specific to employee's role and contribution.\n"
+            "- Choose metric_type appropriately (e.g. Cost -> LOWER_IS_BETTER, Revenue -> HIGHER_IS_BETTER, Audit -> BOOLEAN). Default to HIGHER_IS_BETTER.\n"
             "- Keep reply encouraging and supportive."
         )
 

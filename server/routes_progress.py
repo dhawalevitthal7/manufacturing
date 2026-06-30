@@ -330,6 +330,22 @@ def _get_submission_dict(submission: ProgressSubmission, db: Session) -> dict:
         "created_at": submission.created_at.isoformat() if submission.created_at else None,
         "reviewed_at": submission.reviewed_at.isoformat() if submission.reviewed_at else None,
     }
+    # ── Normalization fields ──
+    if submission.key_result_id:
+        kr = db.query(KeyResult).filter(KeyResult.id == submission.key_result_id).first()
+        if kr:
+            payload["normalized_progress"] = getattr(kr, "normalized_progress", None) or 0.0
+            payload["kpi_behavior"] = getattr(kr, "kpi_behavior", "HIGHER_IS_BETTER")
+            payload["actual_value"] = getattr(kr, "last_actual_value", None)
+            payload["target_value"] = kr.target_value
+            payload["unit"] = kr.unit
+            # Compute formula_used on-the-fly for display
+            try:
+                from server.services.progress_normalization_service import calculate_progress
+                result = calculate_progress(kr, kr.current_value or 0.0)
+                payload["formula_used"] = result.formula_used
+            except Exception:
+                payload["formula_used"] = None
     payload["approval_chain_status"] = chain_status(
         db, SUBJECT_PROGRESS_SUBMISSION, submission.id
     )

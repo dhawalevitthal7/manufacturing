@@ -334,6 +334,16 @@ def _kr_dict(kr, db):
         "pending_submitted_note": pending_submitted_note,
         "ingest_source": ingest_info,
         "auto_ingest_active": bool(ingest and ingest.is_active),
+        "kpi_behavior": getattr(kr, "kpi_behavior", "HIGHER_IS_BETTER"),
+        "target_min": getattr(kr, "target_min", None),
+        "target_max": getattr(kr, "target_max", None),
+        "tolerance": getattr(kr, "tolerance", None),
+        "allow_overachievement": getattr(kr, "allow_overachievement", False),
+        "milestone_total": getattr(kr, "milestone_total", None),
+        "milestone_completed": getattr(kr, "milestone_completed", None),
+        "normalized_progress": getattr(kr, "normalized_progress", 0.0),
+        "last_actual_value": getattr(kr, "last_actual_value", None),
+        "last_calculated_at": kr.last_calculated_at.isoformat() if getattr(kr, "last_calculated_at", None) else None,
     }
 
 
@@ -1027,6 +1037,12 @@ def assign_okr_to_employee(
                 target_value=kr_data.target_value or 100.0,
                 unit=kr_data.unit or "%",
                 weight=kr_data.weight or 1.0,
+                kpi_behavior=kr_data.kpi_behavior,
+                target_min=kr_data.target_min,
+                target_max=kr_data.target_max,
+                tolerance=kr_data.tolerance,
+                allow_overachievement=kr_data.allow_overachievement,
+                milestone_total=kr_data.milestone_total,
             )
             db.add(kr)
 
@@ -1379,6 +1395,12 @@ def add_key_result(obj_id: str, req: KeyResultCreate, db: Session = Depends(get_
         target_value=req.target_value,
         unit=req.unit,
         weight=req.weight,
+        kpi_behavior=req.kpi_behavior,
+        target_min=req.target_min,
+        target_max=req.target_max,
+        tolerance=req.tolerance,
+        allow_overachievement=req.allow_overachievement,
+        milestone_total=req.milestone_total,
     )
     db.add(kr)
     db.commit()
@@ -1399,9 +1421,24 @@ def update_key_result(kr_id: str, req: KeyResultCreate, db: Session = Depends(ge
         except ValueError as e:
             raise _lifecycle_error(e)
     kr.title = req.title
-    kr.target_value = req.target_value
-    kr.unit = req.unit
-    kr.weight = req.weight
+    if req.target_value is not None:
+        kr.target_value = req.target_value
+    if req.unit is not None:
+        kr.unit = req.unit
+    if req.weight is not None:
+        kr.weight = req.weight
+    if req.kpi_behavior is not None:
+        kr.kpi_behavior = req.kpi_behavior
+    if req.target_min is not None:
+        kr.target_min = req.target_min
+    if req.target_max is not None:
+        kr.target_max = req.target_max
+    if req.tolerance is not None:
+        kr.tolerance = req.tolerance
+    if req.allow_overachievement is not None:
+        kr.allow_overachievement = req.allow_overachievement
+    if req.milestone_total is not None:
+        kr.milestone_total = req.milestone_total
     db.commit()
     db.refresh(kr)
     _recalc_and_cascade(kr.objective_id, db)

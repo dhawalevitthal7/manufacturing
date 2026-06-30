@@ -30,11 +30,55 @@ interface KeyResult {
   unit: string;
   weight?: number;
   progress_pct?: number;
+  kpi_behavior?: string;
+  target_min?: number | null;
+  target_max?: number | null;
+  tolerance?: number | null;
+  allow_overachievement?: boolean;
+  milestone_total?: number | null;
+  milestone_completed?: number | null;
+  normalized_progress?: number;
+  last_actual_value?: number | null;
 }
 
 interface Props {
   keyResult: KeyResult;
   onSubmitSuccess?: () => void;
+}
+
+// ── Simple Frontend Replica of Normalization Engine for Preview ──
+function calculatePreviewPct(kr: KeyResult, actual: number): number {
+  const behavior = kr.kpi_behavior || "HIGHER_IS_BETTER";
+  const target = kr.target_value || 0;
+  const allowOver = kr.allow_overachievement || false;
+
+  let raw = 0;
+  if (behavior === "HIGHER_IS_BETTER") {
+    if (target > 0) raw = (actual / target) * 100;
+  } else if (behavior === "LOWER_IS_BETTER") {
+    if (actual <= target) raw = 100;
+    else if (actual > 0) raw = (target / actual) * 100;
+  } else if (behavior === "TARGET_MATCH") {
+    if (target > 0) raw = (1 - Math.abs(actual - target) / target) * 100;
+  } else if (behavior === "BOOLEAN") {
+    raw = actual ? 100 : 0;
+  } else if (behavior === "RANGE") {
+    const min = kr.target_min ?? 0;
+    const max = kr.target_max ?? 0;
+    const tol = kr.tolerance ?? 20;
+    if (actual >= min && actual <= max) raw = 100;
+    else {
+      const dist = actual < min ? min - actual : actual - max;
+      const band = (max - min) * (tol / 100);
+      raw = band > 0 ? 100 - (dist / band) * 100 : 0;
+    }
+  } else if (behavior === "MILESTONE") {
+    const total = kr.milestone_total || 1;
+    raw = (actual / total) * 100;
+  }
+
+  const clamped = allowOver ? Math.max(0, raw) : Math.max(0, Math.min(100, raw));
+  return clamped;
 }
 
 export function ProgressSubmissionForm({
@@ -43,7 +87,9 @@ export function ProgressSubmissionForm({
 }: Props) {
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [newValue, setNewValue] = useState<string>(keyResult.current_value.toString());
+  // Default to last_actual_value if available, else current_value
+  const initialValue = keyResult.last_actual_value ?? keyResult.current_value;
+  const [newValue, setNewValue] = useState<string>(initialValue.toString());
   const [notes, setNotes] = useState("");
   const [blockers, setBlockers] = useState("");
   const [evidenceUrl, setEvidenceUrl] = useState("");
@@ -51,8 +97,8 @@ export function ProgressSubmissionForm({
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  const progressPct = keyResult.current_value / keyResult.target_value * 100;
-  const projectedPct = parseFloat(newValue || "0") / keyResult.target_value * 100;
+  const progressPct = keyResult.normalized_progress ?? keyResult.progress_pct ?? 0;
+  const projectedPct = calculatePreviewPct(keyResult, parseFloat(newValue || "0"));
 
   const handleSubmit = async () => {
     if (!newValue) {
@@ -66,7 +112,7 @@ export function ProgressSubmissionForm({
 
     try {
       await api.submitProgressUpdate(keyResult.id, {
-        new_value: parseFloat(newValue),
+        actual_value: parseFloat(newValue),
         notes: notes || undefined,
         blockers: blockers || undefined,
         evidence_url: evidenceUrl || undefined,
